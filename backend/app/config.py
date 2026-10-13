@@ -2,8 +2,8 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg2://tutor:password@localhost/learnloop"
-    tutor_model: str = "gemini-1.5-pro"
-    verifier_model: str = "gemini-1.5-flash"
+    tutor_model: str = "gemini-3.8-flash"
+    verifier_model: str = "gemini-3.8-flash"
     gemini_api_key: str = ""
     embed_dim: int = 1024
     whisper_model: str = "small"

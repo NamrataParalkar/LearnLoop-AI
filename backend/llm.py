@@ -9,49 +9,51 @@ logger = logging.getLogger(__name__)
 
 client = genai.Client(api_key=settings.gemini_api_key)
 
+FALLBACK_MODELS = ["gemini-3.8-flash", "gemini-3.1-pro-preview"]
+
 def generate_structured(prompt: str, schema: dict, model_name: str = None) -> dict:
-    """Generate structured JSON output from Gemini with retry logic."""
-    if not model_name:
-        model_name = settings.tutor_model
-        
+    """Generate structured JSON output from Gemini with retry logic and fallback models."""
+    candidate_models = [model_name] if model_name else [settings.tutor_model] + [m for m in FALLBACK_MODELS if m != settings.tutor_model]
+    
     config = types.GenerateContentConfig(
         response_mime_type="application/json",
         response_schema=schema,
     )
     
     last_err = None
-    for attempt in range(4):
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=config,
-            )
-            return json.loads(response.text)
-        except Exception as e:
-            last_err = e
-            logger.warning(f"generate_structured attempt {attempt+1} failed ({model_name}): {e}")
-            time.sleep(1.5 * (attempt + 1))
+    for target_model in candidate_models:
+        for attempt in range(2):
+            try:
+                response = client.models.generate_content(
+                    model=target_model,
+                    contents=prompt,
+                    config=config,
+                )
+                return json.loads(response.text)
+            except Exception as e:
+                last_err = e
+                logger.warning(f"generate_structured attempt {attempt+1} failed ({target_model}): {e}")
+                time.sleep(1.0 * (attempt + 1))
             
     raise last_err
 
 def generate_text(prompt: str, model_name: str = None) -> str:
-    """Generate raw text from Gemini with retry logic."""
-    if not model_name:
-        model_name = settings.tutor_model
+    """Generate raw text from Gemini with retry logic and fallback models."""
+    candidate_models = [model_name] if model_name else [settings.tutor_model] + [m for m in FALLBACK_MODELS if m != settings.tutor_model]
         
     last_err = None
-    for attempt in range(4):
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt
-            )
-            return response.text
-        except Exception as e:
-            last_err = e
-            logger.warning(f"generate_text attempt {attempt+1} failed ({model_name}): {e}")
-            time.sleep(1.5 * (attempt + 1))
+    for target_model in candidate_models:
+        for attempt in range(2):
+            try:
+                response = client.models.generate_content(
+                    model=target_model,
+                    contents=prompt
+                )
+                return response.text
+            except Exception as e:
+                last_err = e
+                logger.warning(f"generate_text attempt {attempt+1} failed ({target_model}): {e}")
+                time.sleep(1.0 * (attempt + 1))
             
     raise last_err
 

@@ -52,13 +52,15 @@ def hybrid_search(db: Session, query: str, course_id: int, topic_id: Optional[in
     try:
         vector_results = db.execute(text(vector_sql), params).fetchall()
     except Exception as e:
-        logger.error(f"Vector search failed: {e}")
+        logger.warning(f"Vector search failed: {e}. Rolling back sub-transaction.")
+        db.rollback()
         vector_results = []
         
     try:
         keyword_results = db.execute(text(keyword_sql), keyword_params).fetchall()
     except Exception as e:
-        logger.error(f"Keyword search failed: {e}")
+        logger.warning(f"Keyword search failed: {e}. Rolling back sub-transaction.")
+        db.rollback()
         keyword_results = []
     
     # RRF (Reciprocal Rank Fusion)
