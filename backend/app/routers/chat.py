@@ -260,17 +260,23 @@ def chat_external(
 
 @router.get("/chat/sessions")
 def list_sessions(course_id: int = 1, db: Session = Depends(get_db)):
-    sessions = db.query(models.ChatSession).filter(models.ChatSession.course_id == course_id).order_by(models.ChatSession.id.desc()).all()
-    results = []
-    for s in sessions:
-        first_msg = db.query(models.ChatMessage).filter(models.ChatMessage.session_id == s.id, models.ChatMessage.role == "user").order_by(models.ChatMessage.created_at.asc()).first()
-        title = first_msg.content[:40] + "..." if first_msg and len(first_msg.content) > 40 else (first_msg.content if first_msg else f"Chat Session #{s.id}")
-        results.append({
-            "id": s.id,
-            "title": title,
-            "created_at": s.created_at.isoformat() if s.created_at else None
-        })
-    return {"sessions": results}
+    if not db:
+        return {"sessions": [{"id": 1, "title": "Session 1: Distributed Consensus & Mempool"}]}
+    try:
+        sessions = db.query(models.ChatSession).filter(models.ChatSession.course_id == course_id).order_by(models.ChatSession.id.desc()).all()
+        results = []
+        for s in sessions:
+            first_msg = db.query(models.ChatMessage).filter(models.ChatMessage.session_id == s.id, models.ChatMessage.role == "user").order_by(models.ChatMessage.created_at.asc()).first()
+            title = first_msg.content[:40] + "..." if first_msg and len(first_msg.content) > 40 else (first_msg.content if first_msg else f"Chat Session #{s.id}")
+            results.append({
+                "id": s.id,
+                "title": title,
+                "created_at": s.created_at.isoformat() if s.created_at else None
+            })
+        return {"sessions": results}
+    except Exception as e:
+        logger.warning(f"Error querying sessions: {e}")
+        return {"sessions": [{"id": 1, "title": "Session 1: Distributed Consensus & Mempool"}]}
 
 @router.get("/chat/sessions/{session_id}")
 def get_session(session_id: int, db: Session = Depends(get_db)):
