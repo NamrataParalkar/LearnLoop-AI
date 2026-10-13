@@ -261,12 +261,93 @@ export default function GeminiNotebookTutor() {
         const data = await res.json();
         if (data.sessions && Array.isArray(data.sessions)) {
           setSessions(data.sessions);
+          if (typeof window !== "undefined") {
+            localStorage.setItem(`learnloop_sessions_${courseId}`, JSON.stringify(data.sessions));
+          }
         }
       }
     } catch {
       // Silently ignore
     }
   };
+
+  // Rehydrate sources, session, messages, and notes on initial mount
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    // 1. Rehydrate notes
+    try {
+      const savedNotes = localStorage.getItem(`learnloop_notes_${courseId}`);
+      if (savedNotes) {
+        const parsedNotes = JSON.parse(savedNotes);
+        if (Array.isArray(parsedNotes) && parsedNotes.length > 0) {
+          setNotes(parsedNotes);
+        }
+      }
+    } catch {
+      // Ignore JSON error
+    }
+
+    // 2. Rehydrate sessions list from cache
+    try {
+      const savedSessions = localStorage.getItem(`learnloop_sessions_${courseId}`);
+      if (savedSessions) {
+        const parsed = JSON.parse(savedSessions);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setSessions(parsed);
+        }
+      }
+    } catch {
+      // Ignore
+    }
+
+    // 3. Rehydrate active session & messages
+    try {
+      const savedActiveSessId = localStorage.getItem(`learnloop_active_session_${courseId}`);
+      if (savedActiveSessId) {
+        const parsedId = Number(savedActiveSessId);
+        if (!isNaN(parsedId)) {
+          setSessionId(parsedId);
+          // Try loading cached messages for this session
+          const cachedMsgs = localStorage.getItem(`learnloop_msgs_${parsedId}`);
+          if (cachedMsgs) {
+            const parsedMsgs = JSON.parse(cachedMsgs);
+            if (Array.isArray(parsedMsgs) && parsedMsgs.length > 0) {
+              setMessages(parsedMsgs);
+            }
+          }
+          // Also fetch fresh from server
+          loadSession(parsedId);
+        }
+      }
+    } catch {
+      // Ignore
+    }
+  }, [courseId]);
+
+  // Persist messages whenever they change
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (sessionId && messages.length > 0) {
+      try {
+        localStorage.setItem(`learnloop_msgs_${sessionId}`, JSON.stringify(messages));
+      } catch {
+        // Ignore quota error
+      }
+    }
+  }, [sessionId, messages]);
+
+  // Persist notes whenever they change
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (notes.length > 0) {
+      try {
+        localStorage.setItem(`learnloop_notes_${courseId}`, JSON.stringify(notes));
+      } catch {
+        // Ignore quota error
+      }
+    }
+  }, [courseId, notes]);
 
   // Check for auto-remediation / query params on mount
   const hasAutoPromptedRef = useRef(false);
@@ -514,9 +595,16 @@ export default function GeminiNotebookTutor() {
       setIsTyping(false);
 
       if (res.ok) {
-        if (data.session_id && data.session_id !== sessionId) {
+        if (data.session_id) {
           setSessionId(data.session_id);
-          fetchSessions();
+          if (typeof window !== "undefined") {
+            try {
+              localStorage.setItem(`learnloop_active_session_${courseId}`, String(data.session_id));
+            } catch {}
+          }
+          if (data.session_id !== sessionId) {
+            fetchSessions();
+          }
         }
 
         const newMsg: MessageItem = {
@@ -1168,21 +1256,43 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
 
   const loadSession = async (sessId: number) => {
     setSessionId(sessId);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(`learnloop_active_session_${courseId}`, String(sessId));
+        // Check if cached messages exist
+        const cached = localStorage.getItem(`learnloop_msgs_${sessId}`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setMessages(parsed);
+          }
+        }
+      } catch {
+        // Ignore JSON/storage errors
+      }
+    }
+
     try {
       const res = await fetch(getApiUrl(`/api/chat/sessions/${sessId}`));
       if (res.ok) {
         const data = await res.json();
-        if (data.messages) {
-          setMessages(
-            data.messages.map((m: any) => ({
-              id: m.id,
-              role: m.role,
-              content: m.content,
-              status: m.status,
-              citations: [],
-              mode: m.mode
-            }))
-          );
+        if (data.messages && Array.isArray(data.messages)) {
+          const formattedMsgs = data.messages.map((m: any) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            status: m.status,
+            citations: m.citations || [],
+            mode: m.mode
+          }));
+          setMessages(formattedMsgs);
+          if (typeof window !== "undefined") {
+            try {
+              localStorage.setItem(`learnloop_msgs_${sessId}`, JSON.stringify(formattedMsgs));
+            } catch {
+              // Ignore
+            }
+          }
         }
       }
     } catch {
@@ -1543,6 +1653,11 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
               onClick={() => {
                 setSessionId(null);
                 setMessages([]);
+                if (typeof window !== "undefined") {
+                  try {
+                    localStorage.removeItem(`learnloop_active_session_${courseId}`);
+                  } catch {}
+                }
               }}
             >
               + New Chat

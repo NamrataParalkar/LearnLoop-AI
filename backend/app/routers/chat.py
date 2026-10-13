@@ -58,6 +58,19 @@ def chat(
     history = db.query(models.ChatMessage).filter(models.ChatMessage.session_id == session_id).order_by(models.ChatMessage.created_at).all()
     history_list = [{"role": msg.role, "content": msg.content} for msg in history]
     
+    # Persist the incoming user message to database
+    user_msg = models.ChatMessage(
+        session_id=session_id,
+        role="user",
+        content=message,
+        grounded=True,
+        status="answered",
+        mode="source"
+    )
+    db.add(user_msg)
+    db.commit()
+    db.refresh(user_msg)
+    
     # Check Special Case: Explain attached PPT / file
     is_summary = is_source_summary_request(message)
     
@@ -281,4 +294,40 @@ def list_sessions(course_id: int = 1, db: Session = Depends(get_db)):
 @router.get("/chat/sessions/{session_id}")
 def get_session(session_id: int, db: Session = Depends(get_db)):
     messages = db.query(models.ChatMessage).filter(models.ChatMessage.session_id == session_id).order_by(models.ChatMessage.created_at).all()
-    return {"messages": messages}
+    results = []
+    for m in messages:
+        citations = []
+        if m.cited_chunk_ids and isinstance(m.cited_chunk_ids, list):
+            for cid in m.cited_chunk_ids:
+                try:
+                    chk = db.query(models.Chunk).filter(models.Chunk.id == cid).first()
+                    if chk:
+                        src = db.query(models.Source).filter(models.Source.id == chk.source_id).first()
+                        src_title = os.path.basename(src.file_path) if src and src.file_path else "Course Material"
+                        loc = f"Slide {chk.slide_no}" if chk.slide_no else (f"Page {chk.page}" if chk.page else "Section")
+                        media = f"/api/media/{chk.source_id}?slide={chk.slide_no}" if chk.slide_no else (f"/api/media/{chk.source_id}?page={chk.page}" if chk.page else f"/api/media/{chk.source_id}")
+                        citations.append({
+                            "chunk_id": chk.id,
+                            "source_id": chk.source_id,
+                            "source_title": src_title,
+                            "source_type": src.source_type if src else "pdf",
+                            "location": loc,
+                            "slide_no": chk.slide_no,
+                            "page": chk.page,
+                            "excerpt": chk.text[:180] + "..." if len(chk.text) > 180 else chk.text,
+                            "media_url": media
+                        })
+                except Exception:
+                    pass
+        results.append({
+            "id": m.id,
+            "session_id": m.session_id,
+            "role": m.role,
+            "content": m.content,
+            "status": m.status,
+            "grounded": m.grounded,
+            "mode": m.mode,
+            "citations": citations,
+            "created_at": m.created_at.isoformat() if m.created_at else None
+        })
+    return {"messages": results}
