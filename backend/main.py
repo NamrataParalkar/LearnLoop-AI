@@ -10,8 +10,12 @@ logger = logging.getLogger(__name__)
 
 # Create database tables if database is reachable
 try:
+    with engine.connect() as conn:
+        from sqlalchemy import text
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+        conn.commit()
     Base.metadata.create_all(bind=engine)
-    logger.info("Database tables verified successfully.")
+    logger.info("Database tables and pgvector extension verified successfully.")
 except Exception as e:
     logger.warning(f"Could not connect to PostgreSQL on startup: {e}. Running in standalone mock/cache mode.")
 

@@ -1,9 +1,22 @@
 from sqlalchemy import Column, Integer, String, Float, ForeignKey, Text, JSON, Boolean, DateTime
 from sqlalchemy.orm import relationship
-from database import Base
-from pgvector.sqlalchemy import Vector
+from database import Base, engine
 import datetime
 from app.config import settings
+
+# Graceful vector fallback if pgvector extension is not compiled into local Windows PostgreSQL
+try:
+    from pgvector.sqlalchemy import Vector
+    # Check if vector extension actually exists on the DB
+    with engine.connect() as _c:
+        from sqlalchemy import text
+        _res = _c.execute(text("SELECT 1 FROM pg_type WHERE typname = 'vector'")).fetchone()
+        if _res:
+            EmbeddingColumnType = Vector(settings.embed_dim)
+        else:
+            EmbeddingColumnType = JSON
+except Exception:
+    EmbeddingColumnType = JSON
 
 class User(Base):
     __tablename__ = "users"
@@ -68,7 +81,7 @@ class Chunk(Base):
     
     chunk_type = Column(String, default="text") # text, figure, transcript
     text = Column(Text)
-    embedding = Column(Vector(settings.embed_dim))
+    embedding = Column(EmbeddingColumnType)
     
     page = Column(Integer, nullable=True)
     page_end = Column(Integer, nullable=True)
@@ -103,7 +116,7 @@ class Question(Base):
     
     source_chunk_ids = Column(JSON)
     source_location = Column(JSON) # Snapshot of page/slide/timestamp
-    embedding = Column(Vector(settings.embed_dim))
+    embedding = Column(EmbeddingColumnType)
     verification = Column(JSON) # solver_answer, agreement, checks_passed, attempts
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
