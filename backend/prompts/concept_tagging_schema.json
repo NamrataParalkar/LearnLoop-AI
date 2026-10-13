@@ -1,0 +1,18 @@
+{
+    "type": "object",
+    "properties": {
+        "tags": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "chunk_id": {"type": "integer"},
+                    "topic": {"type": "string"},
+                    "concept": {"type": "string"}
+                },
+                "required": ["chunk_id", "topic", "concept"]
+            }
+        }
+    },
+    "required": ["tags"]
+}

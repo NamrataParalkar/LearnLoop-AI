@@ -1,0 +1,43 @@
+{
+    "type": "object",
+    "properties": {
+        "topics": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "subtopics": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "concepts": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            "required": ["name", "concepts"]
+                        }
+                    }
+                },
+                "required": ["name", "subtopics"]
+            }
+        },
+        "prerequisites": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "concept": {"type": "string"},
+                    "requires": {"type": "string"}
+                },
+                "required": ["concept", "requires"]
+            }
+        }
+    },
+    "required": ["topics", "prerequisites"]
+}
