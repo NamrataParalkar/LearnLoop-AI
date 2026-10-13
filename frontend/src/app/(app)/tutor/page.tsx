@@ -196,9 +196,28 @@ export default function GeminiNotebookTutor() {
     }
   };
 
+  // Check for auto-remediation / query params on mount
+  const hasAutoPromptedRef = useRef(false);
+
   useEffect(() => {
     fetchSources();
     fetchSessions();
+
+    if (typeof window !== "undefined" && !hasAutoPromptedRef.current) {
+      const params = new URLSearchParams(window.location.search);
+      const queryParam = params.get("q") || params.get("remediate");
+      if (queryParam) {
+        hasAutoPromptedRef.current = true;
+        const promptToSend = params.get("q") 
+          ? queryParam 
+          : `Can you explain the key concepts and resolve my misconceptions regarding: ${queryParam}? Please ground your explanation in our course syllabus.`;
+        
+        // Auto-fill input and trigger sendMessage after a short delay to allow source loading
+        setTimeout(() => {
+          sendMessage(false, promptToSend);
+        }, 500);
+      }
+    }
   }, [courseId]);
 
   // Source selection toggle (NotebookLM checkbox mechanism)

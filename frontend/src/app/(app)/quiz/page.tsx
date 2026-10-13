@@ -1297,11 +1297,29 @@ export default function PracticeQuizPage() {
               <Button variant="outline" size="sm" onClick={() => setView("setup")}>
                 <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Start New Practice Quiz
               </Button>
-              <Link href="/tutor">
-                <Button size="sm" className="gap-1.5">
-                  <Sparkles className="h-3.5 w-3.5" /> Review Weak Topics with AI Tutor
-                </Button>
-              </Link>
+              {(() => {
+                // Collect weak topics from mastery changes or mistakes
+                const weakFromMastery = (report.mastery_changes || [])
+                  .filter((m: any) => m.delta < 0 || m.after_pct < 65)
+                  .map((m: any) => m.concept_name);
+                const weakFromMistakes = (mistakesAnalysis || []).map((m: any) => m.concept_name);
+                const weakFromQuestions = (report.per_question_results || [])
+                  .filter((q: any) => !q.is_correct)
+                  .map((q: any) => q.concept_name || q.topic_name);
+
+                const allWeak = Array.from(new Set([...weakFromMastery, ...weakFromMistakes, ...weakFromQuestions])).filter(Boolean);
+                const weakList = allWeak.length > 0 ? allWeak.slice(0, 3).join(", ") : "the topics I missed in my latest quiz";
+                const remediationPrompt = `I just completed a practice quiz and struggled with: ${weakList}. Can you explain these concepts clearly with citations and examples from our course material?`;
+                const tutorHref = `/tutor?q=${encodeURIComponent(remediationPrompt)}&remediate=${encodeURIComponent(weakList)}`;
+
+                return (
+                  <Link href={tutorHref}>
+                    <Button size="sm" className="gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5" /> Review Weak Topics with AI Tutor
+                    </Button>
+                  </Link>
+                );
+              })()}
             </CardFooter>
           </Card>
 
