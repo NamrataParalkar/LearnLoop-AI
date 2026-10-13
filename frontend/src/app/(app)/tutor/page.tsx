@@ -206,30 +206,52 @@ export default function GeminiNotebookTutor() {
     scrollToBottom();
   }, [messages, isTyping]);
 
-  // Load sources & sessions from backend
+  // Load sources & sessions from backend + localStorage sync so they NEVER vanish on reload
   const fetchSources = async () => {
+    // 1. Instantly restore from localStorage first if available
+    if (typeof window !== "undefined") {
+      try {
+        const cached = localStorage.getItem(`learnloop_sources_${courseId}`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSources(parsed);
+            setSelectedSourceIds(parsed.map((s: SourceItem) => s.id));
+          }
+        }
+      } catch {
+        // Ignore JSON error
+      }
+    }
+
     try {
       const res = await fetch(getApiUrl(`/api/courses/${courseId}/sources`));
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
           setSources(data);
-          // By default, select all sources as active notebook context
           setSelectedSourceIds(data.map((s: SourceItem) => s.id));
+          if (typeof window !== "undefined") {
+            localStorage.setItem(`learnloop_sources_${courseId}`, JSON.stringify(data));
+          }
           return;
         }
       }
     } catch {
-      // Fallback fallback sample sources if offline/mock
+      // Fallback sample sources if offline/mock
     }
 
     const fallbackSources: SourceItem[] = [
-      { id: 36, name: "YouTube: 4nSI0by9-lg (Lecture)", source_type: "video", status: "completed" },
-      { id: 34, name: "1_202402100007_Namrata Paralkar_ASS2.pptx", source_type: "pptx", status: "completed" },
-      { id: 35, name: "1_1_202402100007_Namrata Paralkar_ASS2.pdf", source_type: "pdf", status: "completed" }
+      { id: 1, name: "Lec 6.pdf", source_type: "pdf", status: "completed", progress: 100 },
+      { id: 36, name: "YouTube: 4nSI0by9-lg (Lecture)", source_type: "video", status: "completed", progress: 100 },
+      { id: 34, name: "1_202402100007_Namrata Paralkar_ASS2.pptx", source_type: "pptx", status: "completed", progress: 100 },
+      { id: 35, name: "1_1_202402100007_Namrata Paralkar_ASS2.pdf", source_type: "pdf", status: "completed", progress: 100 }
     ];
     setSources(fallbackSources);
     setSelectedSourceIds(fallbackSources.map(s => s.id));
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`learnloop_sources_${courseId}`, JSON.stringify(fallbackSources));
+    }
   };
 
   const fetchSessions = async () => {
