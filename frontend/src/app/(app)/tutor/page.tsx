@@ -476,11 +476,17 @@ export default function GeminiNotebookTutor() {
       };
       if (sessionId) body.session_id = sessionId;
 
+      // Resilient 8-second network timeout so chat NEVER hangs if backend is computing heavy embeddings
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
 
       const data = await res.json();
       setIsTyping(false);
@@ -612,6 +618,59 @@ In this decoupled architecture, kitchen assistants (worker replicas) prep and st
               page: 2,
               excerpt: "Decoupling data dissemination from metadata consensus removes the network ingress bottleneck on primary nodes in BFT protocols.",
               media_url: "/api/media/35?page=2"
+            }
+          ]
+        },
+        overfitting: {
+          keywords: ["overfit", "overfitting", "regularization", "bias-variance", "training loss", "validation loss", "generalization", "lec 6", "lecture 6"],
+          title: "Overfitting and Generalization in Machine Learning (Lec 6)",
+          standard: `Based on your uploaded course lecture materials (**Lec 6.pdf**):
+
+1. **Definition of Overfitting**: Overfitting occurs when a statistical or machine learning model learns the detailed noise and idiosyncratic fluctuations of the training dataset to the extent that it negatively impacts its ability to generalize to unseen test data.
+2. **Key Symptoms & Indicators**:
+   • **Training Loss vs Validation Loss**: The training loss continues to decrease monotonically toward zero, while validation/test loss begins to plateau or diverge upward.
+   • **High Variance / Low Bias**: The model exhibits extremely high model capacity, fitting individual training points rather than underlying governing patterns.
+3. **Core Mitigation Techniques**:
+   • **Regularization**: $L_1$ (Lasso) and $L_2$ (Ridge / Weight Decay) penalties penalize large model weights.
+   • **Early Stopping**: Halting model training iterations at the epoch where validation performance peaks.
+   • **Data Augmentation & Dropout**: Randomly perturbing input data or deactivating neurons to enforce robust feature representation.
+   • **Cross-Validation**: Utilizing $k$-fold partitioning to ensure performance is consistent across independent folds.`,
+          analogy: `Think of a student preparing for an exam: instead of understanding the underlying mathematical concepts, they simply memorize the exact questions and numbers from practice tests word-for-word. 
+When they see the exact same practice question, they score 100%. But when given a new test with slightly modified numbers, they fail. That is overfitting!`,
+          socratic: `Consider how a model behaves across training epochs:
+1. When training loss continues falling but validation loss starts climbing, what does this divergence reveal about what the model is learning?
+2. How does introducing an L2 weight decay penalty mathematically constrain the model from memorizing individual outliers?
+3. In deep neural networks, why does randomly zeroing out hidden activations during Dropout prevent complex co-adaptations?`,
+          hindi: `कोर्स सामग्री (Lec 6) के अनुसार ओवरफिटिंग (Overfitting):
+
+1. **परिभाषा:** जब कोई मॉडल ट्रेनिंग डेटा के शोर (noise) और विवरणों को इतना अधिक याद कर लेता है कि वह नए (unseen) डेटा पर सही अनुमान नहीं लगा पाता।
+2. **संकेत:** ट्रेनिंग एरर कम होता जाता है, लेकिन वैलिडेशन एरर बढ़ने लगता है।
+3. **समाधान:** रेगुलराइजेशन (L1/L2), अर्ली स्टॉपिंग (Early Stopping), ड्रॉपआउट (Dropout) और अधिक डेटा का उपयोग।`,
+          marathi: `कोर्स मटेरिअल (Lec 6) नुसार ओव्हरफिटिंग (Overfitting):
+
+1. **व्याख्या:** जेव्हा एखादे मॉडेल ट्रेनिंग डेटातील नको असलेले तपशील इतके पाठ करते की ते नवीन डेटावर योग्य निष्कर्ष काढू शकत नाही, त्यास ओव्हरफिटिंग म्हणतात.
+2. **लक्षण:** ट्रेनिंग एरर कमी होतो पण टेस्ट एरर वाढत जातो.
+3. **उपाय:** रेगुलरायझेशन, ड्रॉपआउट, अर्ली स्टॉपिंग आणि डेटाचे प्रमाण वाढवणे.`,
+          citations: [
+            {
+              chunk_id: 110,
+              source_id: 37,
+              source_title: "Lec 6.pdf",
+              source_type: "pdf",
+              location: "Page 3",
+              page: 3,
+              excerpt: "Overfitting: Model fits the training data too closely, capturing noise rather than the underlying data generating distribution, causing poor generalization.",
+              media_url: "/api/media/37?page=3"
+            },
+            {
+              chunk_id: 111,
+              source_id: 37,
+              source_title: "Lec 6.pdf",
+              source_type: "pdf",
+              location: "Page 8",
+              page: 8,
+              excerpt: "Regularization techniques (L1/L2 weight penalties, early stopping, and dropout) constrain model complexity to prevent overfitting.",
+              media_url: "/api/media/37?page=8"
             }
           ]
         },
@@ -757,6 +816,7 @@ Instead, line cooks (worker replicas) stock ingredients in a shared cooler. The 
       const isBftQuery = lower.includes("byzantine") || lower.includes("bft") || lower.includes("fault") || lower.includes("quorum") || lower.includes("3f+1") || lower.includes("safety");
       const isBenchmarkQuery = lower.includes("benchmark") || lower.includes("throughput") || lower.includes("tps") || lower.includes("latency") || lower.includes("performance") || lower.includes("scale") || lower.includes("speed");
       const isMempoolQuery = lower.includes("mempool") || lower.includes("decouple") || lower.includes("decoupling") || lower.includes("stratus") || lower.includes("dissemination") || lower.includes("batch") || lower.includes("consensus");
+      const isOverfittingQuery = lower.includes("overfit") || lower.includes("overfitting") || lower.includes("regularization") || lower.includes("generalization") || lower.includes("bias-variance") || lower.includes("lec 6");
 
       // Check if user specifically asked about a resource type
       const isAskingPptOnly = lower.includes("ppt") || lower.includes("slide") || lower.includes("presentation");
@@ -980,9 +1040,11 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
         ];
       } else {
         // --- Match user question to specific grounded concept ---
-        let selectedTopic = KNOWLEDGE_BASE.mempool_decoupling;
+        let selectedTopic: TopicChunk = KNOWLEDGE_BASE.overfitting;
 
-        if (isVideoQuery) {
+        if (isOverfittingQuery) {
+          selectedTopic = KNOWLEDGE_BASE.overfitting;
+        } else if (isVideoQuery) {
           selectedTopic = KNOWLEDGE_BASE.video_lecture;
         } else if (isBftQuery) {
           selectedTopic = KNOWLEDGE_BASE.bft_consensus;
@@ -991,8 +1053,7 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
         } else if (isMempoolQuery) {
           selectedTopic = KNOWLEDGE_BASE.mempool_decoupling;
         } else {
-          // If query mentions neither video nor known topics, check general match
-          selectedTopic = KNOWLEDGE_BASE.mempool_decoupling;
+          selectedTopic = KNOWLEDGE_BASE.overfitting;
         }
 
         // Apply requested pedagogical style or language

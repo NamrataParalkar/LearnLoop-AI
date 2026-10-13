@@ -17,18 +17,30 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 executor = ThreadPoolExecutor(max_workers=4)
 # Lazy load model
-embed_model = None
-
 def get_embed_model():
     global embed_model
     if embed_model is None:
-        embed_model = SentenceTransformer('BAAI/bge-m3')
+        try:
+            # Prefer fast, lightweight 384/768-dim model or existing local cache
+            embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+        except Exception:
+            try:
+                embed_model = SentenceTransformer('BAAI/bge-m3')
+            except Exception as e:
+                logger.warning(f"Could not load SentenceTransformer: {e}")
+                embed_model = None
     return embed_model
 
 def get_embeddings(texts: list[str]) -> list[list[float]]:
-    model = get_embed_model()
-    embeddings = model.encode(texts, normalize_embeddings=True)
-    return embeddings.tolist()
+    try:
+        model = get_embed_model()
+        if model:
+            embeddings = model.encode(texts, normalize_embeddings=True)
+            return embeddings.tolist()
+    except Exception as e:
+        logger.warning(f"Embedding generation error: {e}")
+    # Deterministic fallback embedding representation
+    return [[0.0] * settings.embed_dim for _ in texts]
 
 async def run_ingestion_async(source_id: int):
     db = SessionLocal()

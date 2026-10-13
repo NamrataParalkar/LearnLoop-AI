@@ -12,9 +12,9 @@ def get_cross_encoder():
     if _cross_encoder is None:
         try:
             from sentence_transformers import CrossEncoder
-            _cross_encoder = CrossEncoder('BAAI/bge-reranker-base', local_files_only=False)
-        except Exception as e:
-            logger.warning(f"Failed to load local reranker: {e}. Will fallback to LLM.")
+            _cross_encoder = CrossEncoder('BAAI/bge-reranker-base', local_files_only=True)
+        except Exception:
+            _cross_encoder = None
     return _cross_encoder
 
 def rerank_chunks(query: str, chunks: List[models.Chunk], top_n: int = None) -> Tuple[List[models.Chunk], List[float], float]:
