@@ -45,7 +45,10 @@ import {
   MessageSquareQuote,
   Check,
   Link as LinkIcon,
-  PlaySquare
+  PlaySquare,
+  Volume2,
+  VolumeX,
+  Mic
 } from "lucide-react";
 import { API_BASE_URL, getApiUrl } from "@/lib/config";
 
@@ -118,6 +121,44 @@ export default function GeminiNotebookTutor() {
   const [rightPanelTab, setRightPanelTab] = useState<"viewer" | "studio">("studio");
   const [viewerContent, setViewerContent] = useState<CitationItem | null>(null);
   const [copiedId, setCopiedId] = useState<string | number | null>(null);
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | number | null>(null);
+
+  // Audio Speech Synthesis (TTS Requirement 6.e)
+  const toggleSpeech = (text: string, msgId: string | number) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      alert("Text-to-speech audio is not supported in this browser.");
+      return;
+    }
+
+    if (speakingMsgId === msgId) {
+      window.speechSynthesis.cancel();
+      setSpeakingMsgId(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    // Clean text of markdown asterisks and hash symbols for smooth natural audio speech
+    const cleanText = text
+      .replace(/[*#_`>]/g, "")
+      .replace(/\[\d+\]/g, "")
+      .replace(/https?:\/\/\S+/g, "");
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    if (language === "Hindi") {
+      utterance.lang = "hi-IN";
+    } else if (language === "Marathi") {
+      utterance.lang = "mr-IN";
+    } else {
+      utterance.lang = "en-US";
+    }
+    utterance.rate = 1.0;
+
+    utterance.onend = () => setSpeakingMsgId(null);
+    utterance.onerror = () => setSpeakingMsgId(null);
+
+    setSpeakingMsgId(msgId);
+    window.speechSynthesis.speak(utterance);
+  };
 
   // Collapsible Side Panels State
   const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
@@ -1591,7 +1632,7 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
                         </div>
                       )}
 
-                      {/* Action Bar (Save to Studio Note, Copy, Feedback) */}
+                      {/* Action Bar (Save to Studio Note, Audio Read Aloud, Copy, Feedback) */}
                       {m.role === "assistant" && (
                         <div className="flex items-center gap-2 mt-3 pt-2 text-muted-foreground border-t border-border/40">
                           <Button
@@ -1602,6 +1643,25 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
                           >
                             <Lightbulb className="h-3 w-3" />
                             Save to Studio Note
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={`h-6 px-2 text-[11px] gap-1 transition-colors ${speakingMsgId === m.id ? "text-primary font-semibold bg-primary/10" : "hover:text-primary"}`}
+                            onClick={() => toggleSpeech(m.content, m.id)}
+                            title={speakingMsgId === m.id ? "Stop reading aloud" : "Read aloud (Audio Tutor)"}
+                          >
+                            {speakingMsgId === m.id ? (
+                              <>
+                                <VolumeX className="h-3 w-3 text-primary animate-pulse" />
+                                Stop Audio
+                              </>
+                            ) : (
+                              <>
+                                <Volume2 className="h-3 w-3" />
+                                Listen (Audio Tutor)
+                              </>
+                            )}
                           </Button>
                           <div className="flex-1" />
                           <button
