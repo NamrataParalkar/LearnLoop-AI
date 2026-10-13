@@ -1,0 +1,164 @@
+[
+  {
+    "type": "In-material",
+    "question": "What is Stratus?",
+    "status": "ok",
+    "citations": 2,
+    "top_score": 0.6537,
+    "top_location": "Page 5",
+    "accurate_location": "Yes (Verified in material)"
+  },
+  {
+    "type": "In-material",
+    "question": "How does Stratus decouple transaction distribution from consensus?",
+    "status": "ok",
+    "citations": 2,
+    "top_score": 0.7295,
+    "top_location": "Page 5",
+    "accurate_location": "Yes (Verified in material)"
+  },
+  {
+    "type": "In-material",
+    "question": "What is the research problem addressed in the scaling blockchain consensus paper?",
+    "status": "ok",
+    "citations": 2,
+    "top_score": 0.6973,
+    "top_location": "Slide 4",
+    "accurate_location": "Yes (Verified in material)"
+  },
+  {
+    "type": "In-material",
+    "question": "What is PBFT and why is leader-based BFT a bottleneck in permissioned blockchains?",
+    "status": "ok",
+    "citations": 2,
+    "top_score": 0.7309,
+    "top_location": "Page 4",
+    "accurate_location": "Yes (Verified in material)"
+  },
+  {
+    "type": "In-material",
+    "question": "What is Provably Available Broadcast (PAB)?",
+    "status": "partial",
+    "citations": 4,
+    "top_score": 0.7283,
+    "top_location": "Slide 5",
+    "accurate_location": "Yes (Verified in material)"
+  },
+  {
+    "type": "In-material",
+    "question": "Who is the author of Scaling Blockchain Consensus via a Robust Shared Mempool?",
+    "status": "ok",
+    "citations": 5,
+    "top_score": 0.731,
+    "top_location": "Slide 3",
+    "accurate_location": "Yes (Verified in material)"
+  },
+  {
+    "type": "In-material",
+    "question": "What are the limitations and future work of the Stratus system?",
+    "status": "ok",
+    "citations": 2,
+    "top_score": 0.6949,
+    "top_location": "Slide 8",
+    "accurate_location": "Yes (Verified in material)"
+  },
+  {
+    "type": "In-material",
+    "question": "explain the content in the attached ppt",
+    "status": "answered",
+    "citations": 10,
+    "top_score": 1.0,
+    "top_location": "Slide 1",
+    "accurate_location": "Yes (Verified in material)"
+  },
+  {
+    "type": "In-material",
+    "question": "How do replicas share transaction batches with each other in Stratus?",
+    "status": "partial",
+    "citations": 4,
+    "top_score": 0.7236,
+    "top_location": "Slide 5",
+    "accurate_location": "Yes (Verified in material)"
+  },
+  {
+    "type": "In-material",
+    "question": "What is the scalability trilemma discussed in personal reflection?",
+    "status": "partial",
+    "citations": 2,
+    "top_score": 0.7117,
+    "top_location": "Slide 9",
+    "accurate_location": "Yes (Verified in material)"
+  },
+  {
+    "type": "Off-material",
+    "question": "explain red-black trees",
+    "status": "not_in_material",
+    "citations": 0,
+    "top_score": 0.5,
+    "top_location": "None (Refused)",
+    "accurate_location": "Correctly Refused"
+  },
+  {
+    "type": "Off-material",
+    "question": "how to implement a binary search tree in C++?",
+    "status": "not_in_material",
+    "citations": 0,
+    "top_score": 0.5001,
+    "top_location": "None (Refused)",
+    "accurate_location": "Correctly Refused"
+  },
+  {
+    "type": "Off-material",
+    "question": "what is Dijkstra algorithm?",
+    "status": "not_in_material",
+    "citations": 0,
+    "top_score": 0.5003,
+    "top_location": "None (Refused)",
+    "accurate_location": "Correctly Refused"
+  },
+  {
+    "type": "Off-material",
+    "question": "explain the proof of Fermat last theorem",
+    "status": "not_in_material",
+    "citations": 0,
+    "top_score": 0.5,
+    "top_location": "None (Refused)",
+    "accurate_location": "Correctly Refused"
+  },
+  {
+    "type": "Off-material",
+    "question": "how does photosynthesis work in plants?",
+    "status": "not_in_material",
+    "citations": 0,
+    "top_score": 0.5,
+    "top_location": "None (Refused)",
+    "accurate_location": "Correctly Refused"
+  },
+  {
+    "type": "Off-material",
+    "question": "what is the capital of Australia?",
+    "status": "not_in_material",
+    "citations": 0,
+    "top_score": 0.5001,
+    "top_location": "None (Refused)",
+    "accurate_location": "Correctly Refused"
+  },
+  {
+    "type": "Off-material",
+    "question": "how to bake chocolate chip cookies?",
+    "status": "not_in_material",
+    "citations": 0,
+    "top_score": 0.5,
+    "top_location": "None (Refused)",
+    "accurate_location": "Correctly Refused"
+  },
+  {
+    "type": "Off-material",
+    "question": "what is the difference between TCP and UDP?",
+    "status": "not_in_material",
+    "citations": 0,
+    "top_score": 0.5008,
+    "top_location": "None (Refused)",
+    "accurate_location": "Correctly Refused"
+  }
+]
