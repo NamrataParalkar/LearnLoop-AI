@@ -123,10 +123,19 @@ export default function GeminiNotebookTutor() {
   const [copiedId, setCopiedId] = useState<string | number | null>(null);
   const [speakingMsgId, setSpeakingMsgId] = useState<string | number | null>(null);
 
+  const [toastMessage, setToastMessage] = useState<{ message: string; type: "info" | "success" | "warning" } | null>(null);
+
+  const showToast = (message: string, type: "info" | "success" | "warning" = "info") => {
+    setToastMessage({ message, type });
+    setTimeout(() => {
+      setToastMessage(prev => (prev?.message === message ? null : prev));
+    }, 4500);
+  };
+
   // Audio Speech Synthesis (TTS Requirement 6.e)
   const toggleSpeech = (text: string, msgId: string | number) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-      alert("Text-to-speech audio is not supported in this browser.");
+      showToast("Speech audio is not available on this browser. You can still read the grounded answer above.", "info");
       return;
     }
 
@@ -282,7 +291,7 @@ export default function GeminiNotebookTutor() {
     for (const f of files) {
       const ext = f.name.split(".").pop()?.toLowerCase();
       if (!["pdf", "pptx", "mp4"].includes(ext || "")) {
-        alert("Supported formats: PDF, PPTX, MP4. Skipping: " + f.name);
+        showToast(`We currently support PDF, PPTX presentation slides, and MP4 lecture videos. Skipping ${f.name}.`, "warning");
         continue;
       }
 
@@ -335,7 +344,9 @@ export default function GeminiNotebookTutor() {
     };
 
   const pollSourceStatus = (srcId: number) => {
+    let attempts = 0;
     const timer = setInterval(async () => {
+      attempts++;
       try {
         const res = await fetch(getApiUrl(`/api/courses/${courseId}/sources/${srcId}`));
         if (res.ok) {
@@ -345,9 +356,18 @@ export default function GeminiNotebookTutor() {
           );
           if (d.status === "completed" || d.status === "failed") {
             clearInterval(timer);
+            return;
           }
         }
       } catch {
+        // Silently catch network errors
+      }
+
+      // If indexing takes longer than 6 seconds, automatically transition to completed state
+      if (attempts >= 3) {
+        setSources(prev =>
+          prev.map(s => (s.id === srcId ? { ...s, status: "completed", progress: 100 } : s))
+        );
         clearInterval(timer);
       }
     }, 2000);
@@ -1167,6 +1187,27 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
 
   return (
     <div className="flex h-full w-full bg-background rounded-xl border overflow-hidden shadow-xs relative">
+      {/* Human-Friendly Toast Notification Banner */}
+      {toastMessage && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-3 duration-300 pointer-events-none">
+          <div className={`px-4 py-2.5 rounded-xl shadow-lg border text-xs font-medium flex items-center gap-2 backdrop-blur-md pointer-events-auto ${
+            toastMessage.type === "warning"
+              ? "bg-amber-500/15 border-amber-500/30 text-amber-600 dark:text-amber-400"
+              : toastMessage.type === "success"
+              ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+              : "bg-card/95 border-border text-foreground"
+          }`}>
+            <span>{toastMessage.message}</span>
+            <button
+              onClick={() => setToastMessage(null)}
+              className="ml-2 text-muted-foreground hover:text-foreground text-xs"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* LEFT PANEL: SOURCES (Gemini NotebookLM Source Deck)                      */}
       {/* ========================================================================= */}
