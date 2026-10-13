@@ -47,6 +47,7 @@ import {
   Link as LinkIcon,
   PlaySquare
 } from "lucide-react";
+import { API_BASE_URL, getApiUrl } from "@/lib/config";
 
 interface SourceItem {
   id: number;
@@ -158,7 +159,7 @@ export default function GeminiNotebookTutor() {
   // Load sources & sessions from backend
   const fetchSources = async () => {
     try {
-      const res = await fetch(`http://localhost:8000/api/courses/${courseId}/sources`);
+      const res = await fetch(getApiUrl(`/api/courses/${courseId}/sources`));
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
@@ -183,7 +184,7 @@ export default function GeminiNotebookTutor() {
 
   const fetchSessions = async () => {
     try {
-      const res = await fetch(`http://localhost:8000/api/chat/sessions?course_id=${courseId}`);
+      const res = await fetch(getApiUrl(`/api/chat/sessions?course_id=${courseId}`));
       if (res.ok) {
         const data = await res.json();
         if (data.sessions && Array.isArray(data.sessions)) {
@@ -229,7 +230,7 @@ export default function GeminiNotebookTutor() {
       formData.append("file", f);
 
       try {
-        const res = await fetch(`http://localhost:8000/api/courses/${courseId}/upload`, {
+        const res = await fetch(getApiUrl(`/api/courses/${courseId}/upload`), {
           method: "POST",
           body: formData
         });
@@ -258,7 +259,7 @@ export default function GeminiNotebookTutor() {
   const pollSourceStatus = (srcId: number) => {
     const timer = setInterval(async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/courses/${courseId}/sources/${srcId}`);
+        const res = await fetch(getApiUrl(`/api/courses/${courseId}/sources/${srcId}`));
         if (res.ok) {
           const d = await res.json();
           setSources(prev =>
@@ -291,7 +292,7 @@ export default function GeminiNotebookTutor() {
 
     try {
       // Attempt backend link upload endpoint
-      const res = await fetch(`http://localhost:8000/api/courses/${courseId}/upload-url`, {
+      const res = await fetch(getApiUrl(`/api/courses/${courseId}/upload-url`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: url, source_type: "video" })
@@ -352,8 +353,8 @@ export default function GeminiNotebookTutor() {
 
     try {
       const endpoint = isExternal
-        ? "http://localhost:8000/api/chat/external"
-        : "http://localhost:8000/api/chat";
+        ? getApiUrl("/api/chat/external")
+        : getApiUrl("/api/chat");
 
       const currentStyle = explicitStyle || style;
       const body: any = {
@@ -974,7 +975,7 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
   const loadSession = async (sessId: number) => {
     setSessionId(sessId);
     try {
-      const res = await fetch(`http://localhost:8000/api/chat/sessions/${sessId}`);
+      const res = await fetch(getApiUrl(`/api/chat/sessions/${sessId}`));
       if (res.ok) {
         const data = await res.json();
         if (data.messages) {
@@ -1969,8 +1970,8 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
                     className="w-full text-xs gap-1.5"
                     onClick={() => {
                       const url = viewerContent.media_url
-                        ? `http://localhost:8000${viewerContent.media_url}`
-                        : `http://localhost:8000/api/courses/${courseId}/sources/${viewerContent.source_id}`;
+                        ? getApiUrl(viewerContent.media_url)
+                        : getApiUrl(`/api/courses/${courseId}/sources/${viewerContent.source_id}`);
                       window.open(url, "_blank");
                     }}
                   >

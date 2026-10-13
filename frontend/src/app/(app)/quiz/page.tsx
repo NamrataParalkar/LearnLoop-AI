@@ -15,6 +15,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
+import { getApiUrl } from "@/lib/config";
 
 export default function PracticeQuizPage() {
   // Navigation / View State
@@ -80,7 +81,7 @@ export default function PracticeQuizPage() {
 
   const fetchMistakes = (sessId: number) => {
     setLoadingMistakes(true);
-    fetch(`http://localhost:8000/api/insights/explain-mistakes/${sessId}`)
+    fetch(getApiUrl(`/api/insights/explain-mistakes/${sessId}`))
       .then(res => res.json())
       .then(data => {
         setMistakesAnalysis(data.mistakes || []);
@@ -99,7 +100,7 @@ export default function PracticeQuizPage() {
       if (params.get("view") === "results") {
         const sId = parseInt(params.get("session_id") || "9");
         setSessionId(sId);
-        fetch(`http://localhost:8000/api/insights/explain-mistakes/${sId}`)
+        fetch(getApiUrl(`/api/insights/explain-mistakes/${sId}`))
           .then(r => r.json())
           .then(res => {
             const list = res.mistakes || [];
@@ -146,7 +147,7 @@ export default function PracticeQuizPage() {
 
   // 1. Fetch Real Knowledge Tree
   useEffect(() => {
-    fetch(`http://localhost:8000/api/courses/${courseId}/knowledge`)
+    fetch(getApiUrl(`/api/courses/${courseId}/knowledge`))
       .then(res => res.json())
       .then(data => {
         if (data && data.topics) {
@@ -207,7 +208,7 @@ export default function PracticeQuizPage() {
         time_limit_sec: mode === "mock_exam" ? (timeLimitSec || 600) : timeLimitSec
       };
 
-      const res = await fetch("http://localhost:8000/api/quiz/generate", {
+      const res = await fetch(getApiUrl("/api/quiz/generate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -220,7 +221,7 @@ export default function PracticeQuizPage() {
       setDebugStats(data.debug_stats || null);
 
       // Fetch questions for runner
-      const qRes = await fetch(`http://localhost:8000/api/quiz/${data.session_id}`);
+      const qRes = await fetch(getApiUrl(`/api/quiz/${data.session_id}`));
       const qData = await qRes.json();
       setQuestions(qData.questions || []);
       setCurrentIndex(0);
@@ -252,7 +253,7 @@ export default function PracticeQuizPage() {
     const conf = confidences[qId] || 3;
 
     try {
-      const res = await fetch(`http://localhost:8000/api/quiz/${sessionId}/check_answer`, {
+      const res = await fetch(getApiUrl(`/api/quiz/${sessionId}/check_answer`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question_id: qId, answer: String(ans), confidence: conf })
@@ -277,7 +278,7 @@ export default function PracticeQuizPage() {
     }));
 
     try {
-      const res = await fetch(`http://localhost:8000/api/quiz/${sessionId}/submit`, {
+      const res = await fetch(getApiUrl(`/api/quiz/${sessionId}/submit`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ answers: answersPayload })

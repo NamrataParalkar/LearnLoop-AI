@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     max_context_tokens: int = 4000
 
     class Config:
-        env_file = ".env"
+        env_file = [".env", "../.env", "backend/.env"]
+        extra = "ignore"
 
 settings = Settings()

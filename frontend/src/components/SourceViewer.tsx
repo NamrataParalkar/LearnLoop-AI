@@ -1,5 +1,7 @@
 "use client";
 
+import { getApiUrl } from "@/lib/config";
+
 export default function SourceViewer({ citation }: { citation: any }) {
     
     const renderContent = () => {
@@ -23,7 +25,7 @@ export default function SourceViewer({ citation }: { citation: any }) {
             return (
                 <div className="flex flex-col gap-4">
                     <video 
-                        src={`http://localhost:8000${citation.media_url}`} 
+                        src={getApiUrl(citation.media_url)} 
                         controls 
                         autoPlay 
                         className="w-full rounded bg-black"
@@ -39,7 +41,7 @@ export default function SourceViewer({ citation }: { citation: any }) {
         if (citation.source_type === "pptx") {
             return (
                 <div className="flex flex-col gap-4">
-                    <img src={`http://localhost:8000${citation.media_url}`} alt="Slide" className="w-full border rounded" />
+                    <img src={getApiUrl(citation.media_url)} alt="Slide" className="w-full border rounded" />
                     <div className="p-3 bg-gray-50 border rounded text-sm text-gray-700">
                         <strong>Slide Text & Notes:</strong>
                         <p className="mt-1">{citation.excerpt}</p>

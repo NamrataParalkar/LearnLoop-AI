@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChevronRight, ChevronDown, FileText, FileImage, FileAudio, FolderTree } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { getApiUrl } from "@/lib/config";
 
 export default function CoursesPage() {
   const [data, setData] = useState<any>(null);
@@ -18,7 +19,7 @@ export default function CoursesPage() {
   const [selectedChunk, setSelectedChunk] = useState<any>(null);
 
   useEffect(() => {
-    fetch("http://localhost:8000/api/courses/1/hierarchy")
+    fetch(getApiUrl("/api/courses/1/hierarchy"))
       .then(res => res.json())
       .then(d => {
         setData(d);

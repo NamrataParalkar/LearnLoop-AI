@@ -38,6 +38,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { useUser } from "@/context/UserContext";
+import { getApiUrl } from "@/lib/config";
 
 function getMasteryBadge(val: number, nAnswers: number = 0, isLocked: boolean = false) {
   if (isLocked) {
@@ -97,9 +98,9 @@ export default function DashboardPage() {
     setError(false);
     
     Promise.all([
-      fetch(`http://localhost:8000/api/learner/${userId}/dashboard?course_id=1`).then(r => r.json()),
-      fetch(`http://localhost:8000/api/insights/${userId}/misconceptions?course_id=1`).then(r => r.json()),
-      fetch(`http://localhost:8000/api/insights/${userId}/confidence`).then(r => r.json())
+      fetch(getApiUrl(`/api/learner/${userId}/dashboard?course_id=1`)).then(r => r.json()),
+      fetch(getApiUrl(`/api/insights/${userId}/misconceptions?course_id=1`)).then(r => r.json()),
+      fetch(getApiUrl(`/api/insights/${userId}/confidence`)).then(r => r.json())
     ])
       .then(([dash, misc, conf]) => {
         setData(dash);
@@ -123,7 +124,7 @@ export default function DashboardPage() {
   };
 
   const handleResolveMisconception = (conceptId: number) => {
-    fetch("http://localhost:8000/api/insights/misconceptions/resolve", {
+    fetch(getApiUrl("/api/insights/misconceptions/resolve"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user_id: parseInt(userId), concept_id: conceptId })
@@ -137,7 +138,7 @@ export default function DashboardPage() {
 
   const openWhyWeak = (topicId: number) => {
     setWhyWeakTopicId(topicId);
-    fetch(`http://localhost:8000/api/insights/${userId}/why-weak/${topicId}`)
+    fetch(getApiUrl(`/api/insights/${userId}/why-weak/${topicId}`))
       .then(r => r.json())
       .then(res => setWhyWeakData(res))
       .catch(err => console.error(err));

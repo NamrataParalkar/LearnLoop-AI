@@ -29,6 +29,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { useUser } from "@/context/UserContext";
+import { getApiUrl } from "@/lib/config";
 
 export default function LearningPathPage() {
   const { userId, currentUser } = useUser();
@@ -40,7 +41,7 @@ export default function LearningPathPage() {
   const fetchGraph = () => {
     setLoading(true);
     setError(false);
-    fetch(`http://localhost:8000/api/learner/${userId}/learning-path-graph?course_id=1`)
+    fetch(getApiUrl(`/api/learner/${userId}/learning-path-graph?course_id=1`))
       .then(res => {
         if (!res.ok) throw new Error("Failed to load learning path graph");
         return res.json();
