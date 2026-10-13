@@ -1,7 +1,7 @@
-"""
-Courses Page
-"""
 "use client";
+/**
+ * Courses Page
+ */
 
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";

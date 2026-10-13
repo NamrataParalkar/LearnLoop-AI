@@ -47,12 +47,26 @@ async def upload_source(course_id: int, background_tasks: BackgroundTasks, file:
     
     return {"message": "File uploaded successfully. Processing started.", "source_id": source.id}
 
+@router.get("/courses/{course_id}/sources")
+def get_course_sources(course_id: int, db: Session = Depends(get_db)):
+    sources = db.query(models.Source).filter(models.Source.course_id == course_id).order_by(models.Source.id.desc()).all()
+    return [{
+        "id": s.id,
+        "name": os.path.basename(s.file_path) if s.file_path else f"Source {s.id}",
+        "file_path": s.file_path,
+        "source_type": s.source_type,
+        "status": s.status,
+        "progress": s.progress,
+        "error_message": s.error_message,
+        "created_at": s.created_at.isoformat() if s.created_at else None
+    } for s in sources]
+
 @router.get("/courses/{course_id}/sources/{source_id}")
 def get_source_status(course_id: int, source_id: int, db: Session = Depends(get_db)):
     source = db.query(models.Source).filter(models.Source.id == source_id).first()
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
-    return {"id": source.id, "status": source.status}
+    return {"id": source.id, "status": source.status, "progress": source.progress, "error": source.error_message}
 
 
 @router.get("/courses/{course_id}/hierarchy")

@@ -88,7 +88,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Top bar */}
         <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <div className="flex flex-1 items-center gap-4">
-            <Select value={course} onValueChange={setCourse}>
+            <Select value={course} onValueChange={(v: string | null) => v && setCourse(v)}>
               <SelectTrigger className="w-[200px]">
                 <SelectValue placeholder="Select Course" />
               </SelectTrigger>
@@ -100,7 +100,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           
           <div className="flex items-center gap-4">
-            <Select value={userId} onValueChange={setUserId}>
+            <Select value={userId} onValueChange={(v: string | null) => v && setUserId(v)}>
               <SelectTrigger className="w-[190px] bg-muted/50 border border-border" aria-label="Select Demo User">
                 <div className="flex items-center gap-2 truncate">
                   <User className="h-4 w-4 text-primary shrink-0" />
@@ -135,7 +135,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-6 md:p-8">
+        <main className={cn("flex-1 overflow-y-auto", pathname === "/tutor" ? "p-3 overflow-hidden h-[calc(100vh-4rem)]" : "p-6 md:p-8")}>
           {children}
         </main>
       </div>
