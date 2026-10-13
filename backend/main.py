@@ -1,11 +1,19 @@
-﻿from fastapi import FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base
 import models
 from app.routers import courses, ingestion, chat, quiz, learner, insights
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Create database tables if database is reachable
+try:
+    Base.metadata.create_all(bind=engine)
+    logger.info("Database tables verified successfully.")
+except Exception as e:
+    logger.warning(f"Could not connect to PostgreSQL on startup: {e}. Running in standalone mock/cache mode.")
 
 app = FastAPI(title="LearnLoop API")
 
