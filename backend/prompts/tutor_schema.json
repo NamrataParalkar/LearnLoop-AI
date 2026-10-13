@@ -1,0 +1,21 @@
+{
+    "type": "object",
+    "properties": {
+        "answer_parts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "chunk_ids": {
+                        "type": "array",
+                        "items": {"type": "string"}
+                    }
+                },
+                "required": ["text", "chunk_ids"]
+            }
+        },
+        "coverage_note": {"type": "string"}
+    },
+    "required": ["answer_parts", "coverage_note"]
+}

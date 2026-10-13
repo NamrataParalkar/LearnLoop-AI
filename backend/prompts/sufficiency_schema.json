@@ -1,0 +1,17 @@
+{
+    "type": "object",
+    "properties": {
+        "coverage": {
+            "type": "string",
+            "enum": ["full", "partial", "none"]
+        },
+        "supporting_chunk_ids": {
+            "type": "array",
+            "items": {"type": "string"}
+        },
+        "missing": {
+            "type": "string"
+        }
+    },
+    "required": ["coverage", "supporting_chunk_ids", "missing"]
+}
