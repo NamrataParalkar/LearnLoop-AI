@@ -63,28 +63,49 @@ def hybrid_search(db: Session, query: str, course_id: int, topic_id: Optional[in
         db.rollback()
         keyword_results = []
         
-    # If tsvector had no matches, perform fast ILIKE token matching
-    if not keyword_results:
-        tokens = [t.strip() for t in query.split() if len(t.strip()) > 3]
-        if tokens:
-            ilike_conditions = " OR ".join([f"c.text ILIKE :t_{i}" for i in range(len(tokens))])
-            ilike_sql = f"""
-                SELECT c.id, 1.0 AS text_score
-                FROM chunks c
-                JOIN sources s ON c.source_id = s.id
-                WHERE s.course_id = :course_id AND ({ilike_conditions})
-            """
-            ilike_params = {"course_id": course_id}
-            if source_id:
-                ilike_sql += " AND c.source_id = :source_id"
-                ilike_params["source_id"] = source_id
-            for i, tok in enumerate(tokens):
-                ilike_params[f"t_{i}"] = f"%{tok}%"
-            ilike_sql += f" LIMIT {top_k}"
-            try:
-                keyword_results = db.execute(text(ilike_sql), ilike_params).fetchall()
-            except Exception as e:
-                db.rollback()
+    # 3. Enhanced keyword & stem matching (handles hyphenated terms, plurals, and -ing variations)
+    import re
+    raw_words = re.findall(r'[a-zA-Z0-9]+', query.lower())
+    stopwords = {'what', 'when', 'where', 'which', 'who', 'whom', 'this', 'that', 'with', 'from', 'have', 'does', 'been', 'were', 'about', 'tell', 'show', 'give', 'explain', 'describe'}
+    words = [w for w in raw_words if len(w) > 2 and w not in stopwords]
+    
+    stemmed = set(words)
+    for w in list(words):
+        if w.endswith('fitting') and len(w) > 7:
+            stemmed.add(w.replace('fitting', '-fit'))
+            stemmed.add(w.replace('fitting', 'fit'))
+            stemmed.add(w.replace('fitting', ''))
+        elif w.endswith('ing') and len(w) > 5:
+            stemmed.add(w[:-3])
+            stemmed.add(w[:-4])
+        elif w.endswith('ed') and len(w) > 4:
+            stemmed.add(w[:-2])
+            stemmed.add(w[:-1])
+        elif w.endswith('s') and len(w) > 4:
+            stemmed.add(w[:-1])
+            
+    valid_stems = [s for s in stemmed if len(s) > 2]
+    if valid_stems:
+        ilike_conditions = " OR ".join([f"c.text ILIKE :t_{i}" for i in range(len(valid_stems))])
+        ilike_sql = f"""
+            SELECT c.id, 1.0 AS text_score
+            FROM chunks c
+            JOIN sources s ON c.source_id = s.id
+            WHERE s.course_id = :course_id AND ({ilike_conditions})
+        """
+        ilike_params = {"course_id": course_id}
+        if source_id:
+            ilike_sql += " AND c.source_id = :source_id"
+            ilike_params["source_id"] = source_id
+        for i, tok in enumerate(valid_stems):
+            ilike_params[f"t_{i}"] = f"%{tok}%"
+        ilike_sql += f" LIMIT {top_k * 2}"
+        try:
+            stem_results = db.execute(text(ilike_sql), ilike_params).fetchall()
+            keyword_results.extend(stem_results)
+        except Exception as e:
+            logger.warning(f"Stem keyword search failed: {e}")
+            db.rollback()
     
     # RRF (Reciprocal Rank Fusion)
     rrf_k = 60

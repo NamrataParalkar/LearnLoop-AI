@@ -36,13 +36,28 @@ def rerank_chunks(query: str, chunks: List[models.Chunk], top_n: int = None) -> 
         def sigmoid(x): return 1 / (1 + math.exp(-x))
         scores = [sigmoid(s) for s in scores]
     else:
-        # Fast semantic keyword overlap + LLM fallback
-        q_tokens = set([w.lower() for w in query.split() if len(w) > 2])
+        # Fast semantic keyword & stem overlap
+        import re
+        q_raw = re.findall(r'[a-zA-Z0-9]+', query.lower())
+        q_tokens = set([w for w in q_raw if len(w) > 2])
+        # Add root stems
+        for w in list(q_tokens):
+            if w.endswith('fitting') and len(w) > 7:
+                q_tokens.add(w.replace('fitting', '-fit'))
+                q_tokens.add(w.replace('fitting', 'fit'))
+            elif w.endswith('ing') and len(w) > 5:
+                q_tokens.add(w[:-3])
+        
         overlap_scores = []
         for c in chunks:
-            c_tokens = set([w.lower() for w in (c.text or "").split() if len(w) > 2])
-            overlap = len(q_tokens.intersection(c_tokens))
-            overlap_scores.append(min(1.0, 0.4 + (overlap * 0.15)) if overlap > 0 else 0.45)
+            c_text_lower = (c.text or "").lower()
+            c_raw = re.findall(r'[a-zA-Z0-9]+', c_text_lower)
+            c_tokens = set([w for w in c_raw if len(w) > 2])
+            overlap = 0
+            for qt in q_tokens:
+                if qt in c_text_lower or qt in c_tokens:
+                    overlap += 1
+            overlap_scores.append(min(1.0, 0.45 + (overlap * 0.2)) if overlap > 0 else 0.40)
             
         # Try LLM structured scoring
         try:
