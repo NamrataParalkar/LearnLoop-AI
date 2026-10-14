@@ -12,16 +12,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 def get_db():
-    db = None
+    db = SessionLocal()
     try:
-        db = SessionLocal()
         yield db
-    except Exception as e:
-        logger.warning(f"Database session error (PostgreSQL may be offline or starting): {e}")
-        yield None
     finally:
-        if db is not None:
-            try:
-                db.close()
-            except Exception:
-                pass
+        db.close()
+

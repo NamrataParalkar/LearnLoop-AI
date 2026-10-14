@@ -82,16 +82,21 @@ export default function PracticeQuizPage() {
   const fetchMistakes = (sessId: number) => {
     setLoadingMistakes(true);
     fetch(getApiUrl(`/api/insights/explain-mistakes/${sessId}`))
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
       .then(data => {
         setMistakesAnalysis(data.mistakes || []);
         setLoadingMistakes(false);
       })
       .catch(err => {
-        console.error("Explain mistakes error:", err);
+        console.warn("Explain mistakes error (using fallback):", err);
+        setMistakesAnalysis([]);
         setLoadingMistakes(false);
       });
   };
+
 
   // Support direct deep-link to results view (e.g. ?view=results&session_id=9)
   useEffect(() => {
