@@ -32,7 +32,7 @@ def hybrid_search(db: Session, query: str, course_id: int, topic_id: Optional[in
     
     vector_sql += f" ORDER BY vector_score DESC LIMIT {top_k * 2}"
     
-    # 2. Keyword Search
+    # 2. Keyword Search (tsvector + ILIKE token fallback)
     keyword_sql = """
         SELECT c.id, ts_rank(to_tsvector('english', c.text), plainto_tsquery('english', :query)) AS text_score
         FROM chunks c
@@ -62,6 +62,29 @@ def hybrid_search(db: Session, query: str, course_id: int, topic_id: Optional[in
         logger.warning(f"Keyword search failed: {e}. Rolling back sub-transaction.")
         db.rollback()
         keyword_results = []
+        
+    # If tsvector had no matches, perform fast ILIKE token matching
+    if not keyword_results:
+        tokens = [t.strip() for t in query.split() if len(t.strip()) > 3]
+        if tokens:
+            ilike_conditions = " OR ".join([f"c.text ILIKE :t_{i}" for i in range(len(tokens))])
+            ilike_sql = f"""
+                SELECT c.id, 1.0 AS text_score
+                FROM chunks c
+                JOIN sources s ON c.source_id = s.id
+                WHERE s.course_id = :course_id AND ({ilike_conditions})
+            """
+            ilike_params = {"course_id": course_id}
+            if source_id:
+                ilike_sql += " AND c.source_id = :source_id"
+                ilike_params["source_id"] = source_id
+            for i, tok in enumerate(tokens):
+                ilike_params[f"t_{i}"] = f"%{tok}%"
+            ilike_sql += f" LIMIT {top_k}"
+            try:
+                keyword_results = db.execute(text(ilike_sql), ilike_params).fetchall()
+            except Exception as e:
+                db.rollback()
     
     # RRF (Reciprocal Rank Fusion)
     rrf_k = 60
@@ -78,7 +101,7 @@ def hybrid_search(db: Session, query: str, course_id: int, topic_id: Optional[in
     sorted_chunk_ids = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)[:top_k]
     
     if not sorted_chunk_ids:
-        # Fallback: if keyword & vector yielded nothing, return up to top_k chunks from the source/course
+        # Fallback: return up to top_k chunks from the source/course
         fallback_query = db.query(models.Chunk).join(models.Source).filter(models.Source.course_id == course_id)
         if source_id:
             fallback_query = fallback_query.filter(models.Chunk.source_id == source_id)
@@ -89,3 +112,4 @@ def hybrid_search(db: Session, query: str, course_id: int, topic_id: Optional[in
     chunk_map = {c.id: c for c in chunks}
     
     return [chunk_map[cid] for cid in sorted_chunk_ids if cid in chunk_map]
+

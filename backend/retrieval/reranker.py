@@ -36,29 +36,39 @@ def rerank_chunks(query: str, chunks: List[models.Chunk], top_n: int = None) -> 
         def sigmoid(x): return 1 / (1 + math.exp(-x))
         scores = [sigmoid(s) for s in scores]
     else:
-        # LLM fallback
-        from llm import generate_structured
-        schema = {
-            "type": "object",
-            "properties": {
-                "scores": {
-                    "type": "array",
-                    "items": {"type": "number", "minimum": 0, "maximum": 1}
-                }
-            },
-            "required": ["scores"]
-        }
-        prompt = f"Rate the relevance of these text chunks to the query '{query}' from 0.0 to 1.0.\n\n"
-        for i, c in enumerate(chunks):
-            prompt += f"Chunk {i}: {c.text[:200]}...\n"
+        # Fast semantic keyword overlap + LLM fallback
+        q_tokens = set([w.lower() for w in query.split() if len(w) > 2])
+        overlap_scores = []
+        for c in chunks:
+            c_tokens = set([w.lower() for w in (c.text or "").split() if len(w) > 2])
+            overlap = len(q_tokens.intersection(c_tokens))
+            overlap_scores.append(min(1.0, 0.4 + (overlap * 0.15)) if overlap > 0 else 0.45)
+            
+        # Try LLM structured scoring
         try:
+            from llm import generate_structured
+            schema = {
+                "type": "object",
+                "properties": {
+                    "scores": {
+                        "type": "array",
+                        "items": {"type": "number", "minimum": 0, "maximum": 1}
+                    }
+                },
+                "required": ["scores"]
+            }
+            prompt = f"Rate the relevance of these text chunks to the query '{query}' from 0.0 to 1.0.\n\n"
+            for i, c in enumerate(chunks[:10]):
+                prompt += f"Chunk {i}: {(c.text or '')[:200]}...\n"
             result = generate_structured(prompt, schema)
-            scores = result.get("scores", [0.0] * len(chunks))
-            if len(scores) != len(chunks):
-                scores = [0.0] * len(chunks)
+            llm_scores = result.get("scores", [])
+            if len(llm_scores) == len(chunks[:10]):
+                scores = llm_scores + overlap_scores[10:]
+            else:
+                scores = overlap_scores
         except Exception as e:
-            logger.error(f"LLM reranker failed: {e}")
-            scores = [0.0] * len(chunks)
+            logger.warning(f"LLM reranker failed ({e}), using lexical relevance fallback.")
+            scores = overlap_scores
             
     # Sort
     scored_chunks = list(zip(chunks, scores))
@@ -69,3 +79,4 @@ def rerank_chunks(query: str, chunks: List[models.Chunk], top_n: int = None) -> 
     max_score = top_scores[0] if top_scores else 0.0
     
     return top_chunks, top_scores, max_score
+

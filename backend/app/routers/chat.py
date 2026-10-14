@@ -71,20 +71,37 @@ def chat(
     db.commit()
     db.refresh(user_msg)
     
-    # Check Special Case: Explain attached PPT / file
-    is_summary = is_source_summary_request(message)
+    # Check for @filename, /filename or slash commands referencing specific files
+    matched_source_id = source_id
+    clean_message = message
+    
+    # 1. Look for @filename or @"filename" or @file:id
+    file_tag_match = re.search(r'[@/](?:file[:=])?["\']?([^"\'\s,;?]+(?:\.[a-zA-Z0-9]+)?)["\']?', message)
+    if file_tag_match:
+        tag_text = file_tag_match.group(1).lower().strip()
+        all_sources = db.query(models.Source).filter(models.Source.course_id == course_id).all()
+        for s in all_sources:
+            s_name = (s.file_path or "").split("/")[-1].split("\\")[-1].lower()
+            if tag_text in s_name or s_name in tag_text or str(s.id) == tag_text:
+                matched_source_id = s.id
+                break
+                
+    source_id = matched_source_id
+    
+    # Check Special Case: Explain attached PPT / file or direct summary
+    is_summary = is_source_summary_request(message) or message.strip().startswith("/summary") or message.strip().startswith("/explain")
     
     # 1. Query Rewriting (skip if direct summary command)
     if is_summary:
-        rewritten_query = message
+        rewritten_query = re.sub(r'^[/@]\w+\s*', '', message).strip() or message
     else:
         rewritten_query = rewrite_query(message, history_list)
         
-    logger.info(f"[CHAT] Original: '{message}' | Rewritten: '{rewritten_query}' | Summary mode: {is_summary}")
+    logger.info(f"[CHAT] Original: '{message}' | Rewritten: '{rewritten_query}' | Bound source_id: {source_id} | Summary mode: {is_summary}")
     
     # 2. Retrieval
     if is_summary:
-        # Find PPTX source if not explicitly provided
+        # Find explicit source or PPTX/PDF source
         target_source = None
         if source_id:
             target_source = db.query(models.Source).filter(models.Source.id == source_id).first()
@@ -110,8 +127,13 @@ def chat(
         candidate_chunks = hybrid_search(db, rewritten_query, course_id, topic_id=topic_id, source_id=source_id)
         top_chunks, top_scores, max_score = rerank_chunks(rewritten_query, candidate_chunks)
         
-        # 3. Refusal Gate
-        status, suff_result = check_refusal(rewritten_query, top_chunks, max_score)
+        # 3. Refusal Gate (if source explicitly tagged, grant high confidence)
+        if source_id and top_chunks:
+            status = "ok"
+            suff_result = {"coverage": "full", "supporting_chunk_ids": [f"C{c.id}" for c in top_chunks], "missing": ""}
+        else:
+            status, suff_result = check_refusal(rewritten_query, top_chunks, max_score)
+
 
     logger.info(f"[RETRIEVAL] Found {len(top_chunks)} chunks, max_score={max_score:.4f}, status={status}")
     

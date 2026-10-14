@@ -1993,7 +1993,70 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
         </div>
 
         {/* Input Bar */}
-        <div className="p-3 border-t bg-card/60 backdrop-blur">
+        <div className="p-3 border-t bg-card/60 backdrop-blur relative">
+          {/* Autocomplete Popup Menu for @filename and /commands */}
+          {inputValue.includes("@") && (
+            <div className="absolute bottom-full mb-2 left-3 right-3 max-h-48 overflow-y-auto bg-popover/95 backdrop-blur-md border rounded-xl shadow-xl p-1.5 z-50 text-xs">
+              <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+                <span>Reference specific file in prompt</span>
+                <span className="text-[9px]">Click or press Enter</span>
+              </div>
+              {sources
+                .filter(s => {
+                  const afterAt = inputValue.slice(inputValue.lastIndexOf("@") + 1).toLowerCase();
+                  return !afterAt || s.name.toLowerCase().includes(afterAt);
+                })
+                .map(s => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => {
+                      const atIdx = inputValue.lastIndexOf("@");
+                      const newText = inputValue.slice(0, atIdx) + `@${s.name} `;
+                      setInputValue(newText);
+                      if (!selectedSourceIds.includes(s.id)) {
+                        setSelectedSourceIds(prev => [...prev, s.id]);
+                      }
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-primary/10 hover:text-primary flex items-center justify-between transition-colors"
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <FileText className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                      <span className="font-medium truncate">{s.name}</span>
+                    </div>
+                    <Badge variant="outline" className="text-[9px] uppercase">
+                      {s.source_type}
+                    </Badge>
+                  </button>
+                ))}
+            </div>
+          )}
+
+          {/* Slash Commands Helper */}
+          {inputValue.startsWith("/") && !inputValue.includes(" ") && (
+            <div className="absolute bottom-full mb-2 left-3 max-w-sm overflow-hidden bg-popover/95 backdrop-blur-md border rounded-xl shadow-xl p-1.5 z-50 text-xs">
+              <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                Quick Commands
+              </div>
+              <button
+                type="button"
+                onClick={() => setInputValue("/explain ")}
+                className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-primary/10 hover:text-primary flex items-center gap-2"
+              >
+                <span className="font-mono font-bold text-primary">/explain</span>
+                <span className="text-muted-foreground">Explain concept or file in depth</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInputValue("/summary ")}
+                className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-primary/10 hover:text-primary flex items-center gap-2"
+              >
+                <span className="font-mono font-bold text-primary">/summary</span>
+                <span className="text-muted-foreground">Summarize the selected presentation or PDF</span>
+              </button>
+            </div>
+          )}
+
           <div className="flex items-center bg-background border rounded-xl overflow-hidden shadow-xs focus-within:ring-1 focus-within:ring-primary/50 transition-all">
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -2005,7 +2068,7 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
             <input
               type="text"
               className="flex-1 bg-transparent px-2 py-3 text-xs outline-none text-foreground placeholder:text-muted-foreground"
-              placeholder="Ask a question about your uploaded sources..."
+              placeholder="Ask a question, type @file to target a source, or /summary..."
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
               onKeyDown={e => {
@@ -2027,12 +2090,13 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
           </div>
           <div className="flex items-center justify-between mt-2 px-1 text-[10px] text-muted-foreground">
             <span>
-              Searching {selectedSourceIds.length} of {sources.length} sources
+              Searching {selectedSourceIds.length} of {sources.length} sources (Type @ to target a file)
             </span>
             <span>Strict citation contract active</span>
           </div>
         </div>
       </main>
+
 
       {/* ========================================================================= */}
       {/* RIGHT PANEL: NOTEBOOK STUDIO & SOURCE VIEWER                               */}
