@@ -16,9 +16,12 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 executor = ThreadPoolExecutor(max_workers=4)
+embed_model = None
+
 # Lazy load model
 def get_embed_model():
     global embed_model
+
     if embed_model is None:
         try:
             # Prefer fast, lightweight 384/768-dim model or existing local cache

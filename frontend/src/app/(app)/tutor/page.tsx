@@ -48,7 +48,11 @@ import {
   PlaySquare,
   Volume2,
   VolumeX,
-  Mic
+  Mic,
+  Network,
+  Presentation,
+  Loader2,
+  Share2
 } from "lucide-react";
 import { API_BASE_URL, getApiUrl } from "@/lib/config";
 
@@ -94,11 +98,33 @@ interface StudyNote {
   timestamp: string;
 }
 
+interface MindMapNode {
+  id: string;
+  label: string;
+  level: number;
+  color?: string;
+}
+
+interface MindMapData {
+  title: string;
+  nodes: MindMapNode[];
+  edges: Array<{ from: string; to: string }>;
+  branches_count?: number;
+}
+
 export default function GeminiNotebookTutor() {
   const { currentUser } = useUser();
   const [courseId, setCourseId] = useState<number>(1);
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [sessions, setSessions] = useState<{ id: number; title: string }[]>([]);
+
+  // Notebook Mind Map State
+  const [isMindMapOpen, setIsMindMapOpen] = useState(false);
+  const [isLoadingMindMap, setIsLoadingMindMap] = useState(false);
+  const [mindMapData, setMindMapData] = useState<MindMapData | null>(null);
+
+  // Presentation (.PPTX) State
+  const [isGeneratingPPT, setIsGeneratingPPT] = useState(false);
 
   // Notebook Sources (Left Panel)
   const [sources, setSources] = useState<SourceItem[]>([]);
@@ -601,17 +627,11 @@ export default function GeminiNotebookTutor() {
       };
       if (sessionId) body.session_id = sessionId;
 
-      // Resilient 8-second network timeout so chat NEVER hangs if backend is computing heavy embeddings
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: controller.signal
+        body: JSON.stringify(body)
       });
-      clearTimeout(timeoutId);
 
       const data = await res.json();
       setIsTyping(false);
@@ -686,593 +706,16 @@ export default function GeminiNotebookTutor() {
       }
     } catch (err: any) {
       setIsTyping(false);
-      let fallbackAnswer = "";
-      let fallbackCitations: CitationItem[] = [];
-      let fallbackStatus: "answered" | "partial" | "not_in_material" = "answered";
-      let coverageNote = "";
-
-      // --- Grounded Topic Chunks Registry ---
-      interface TopicChunk {
-        keywords: string[];
-        title: string;
-        standard: string;
-        analogy: string;
-        socratic: string;
-        hindi: string;
-        marathi: string;
-        citations: CitationItem[];
-      }
-
-      const KNOWLEDGE_BASE: Record<string, TopicChunk> = {
-        mempool_decoupling: {
-          keywords: ["mempool", "decouple", "decoupling", "stratus", "dissemination", "transaction propagation", "streaming", "batch", "batches"],
-          title: "Decoupling Mempool from Consensus (Stratus Architecture)",
-          standard: `Based on your course materials, **Stratus decouples transaction dissemination from consensus ordering**:
-
-1. **The Ingress Bottleneck**: In traditional BFT protocols, the primary leader node is forced to both broadcast multi-megabyte block payloads and coordinate multi-round voting. This network bottleneck caps system throughput.
-2. **The Decoupled Architecture**: Instead of routing transactions through the leader, all replicas continuously stream raw transaction batches directly to each other over a shared mempool layer.
-3. **Lightweight Consensus**: The leader only proposes compact cryptographic batch hashes (IDs) into the consensus log.
-4. **Safety & Liveness**: A Proof of Availability (PAB) ensures at least 2f + 1 nodes already have the batch payload before committing, preserving strict Byzantine tolerance while multiplying throughput to >10,000 TPS.`,
-          analogy: `Think of a busy kitchen: if the head chef had to personally take every customer's order, carry raw ingredients, and chop the vegetables while also cooking, the restaurant would grind to a halt. 
-
-In this decoupled architecture, kitchen assistants (worker replicas) prep and store ingredients (transactions) in a shared pantry beforehand. The head chef only needs to call out ticket numbers! That is why throughput jumps by orders of magnitude without overwhelming the leader.`,
-          socratic: `Consider how a network behaves under heavy load:
-1. When 10,000 transactions arrive per second, what gets saturated first—the CPU verifying signatures or the leader node's network bandwidth?
-2. If all replicas already possess the raw transaction data beforehand, why should the leader ever send full blocks again?
-3. By having the leader only agree on lightweight batch identifiers, how does this eliminate the bottleneck while maintaining identical Byzantine fault safety?`,
-          hindi: `कोर्स सामग्री के अनुसार स्ट्रैटस (Stratus) आर्किटेक्चर का मुख्य सिद्धांत:
-
-1. **समस्या (Leader Bottleneck):** पारंपरिक BFT में लीडर नोड को ही सारा भारी डेटा भेजना पड़ता है, जिससे नेटवर्क चोक हो जाता है।
-2. **डिकपलिंग समाधान:** लेन-देन (Transactions) को फैलाने का काम सभी नोड्स बैकग्राउंड में पहले ही कर लेते हैं। लीडर सिर्फ छोटे बैच आईडी (Batch IDs) पर सहमति बनाता है।
-3. **परिणाम:** सुरक्षा को बनाए रखते हुए सिस्टम की गति 10,000 TPS से भी अधिक हो जाती है।`,
-          marathi: `कोर्स सामग्रीनुसार स्ट्रॅटस (Stratus) आर्किटेक्चरचे महत्त्वाचे मुद्दे:
-
-1. **समस्या:** पारंपारिक प्रणालीत मुख्य लीडर नोडवर सर्व डेटा पाठवण्याचा ताण आल्यामुळे गती कमी होते.
-2. **डिकपलिंग उपाय:** सर्व रेप्लिका नोड्स आपापसात डेटा आधीच शेअर करतात. लीडर फक्त लहान बॅच आयडीचा क्रम ठरवतो.
-3. **फायदा:** यामुळे नेटवर्कचा वेग कित्येक पटीने वाढून प्रणाली अधिक वेगवान आणि सुरक्षित बनते.`,
-          citations: [
-            {
-              chunk_id: 101,
-              source_id: 34,
-              source_title: "1_202402100007_Namrata Paralkar_ASS2.pptx",
-              source_type: "pptx",
-              location: "Slide 4",
-              slide_no: 4,
-              excerpt: "Stratus introduces a shared mempool architecture. Replicas disseminate transaction batches independently while the leader proposes only batch IDs.",
-              media_url: "/api/media/34?slide=4"
-            },
-            {
-              chunk_id: 102,
-              source_id: 35,
-              source_title: "1_1_202402100007_Namrata Paralkar_ASS2.pdf",
-              source_type: "pdf",
-              location: "Page 2",
-              page: 2,
-              excerpt: "Decoupling data dissemination from metadata consensus removes the network ingress bottleneck on primary nodes in BFT protocols.",
-              media_url: "/api/media/35?page=2"
-            }
-          ]
-        },
-        overfitting: {
-          keywords: ["overfit", "overfitting", "regularization", "bias-variance", "training loss", "validation loss", "generalization", "lec 6", "lecture 6"],
-          title: "Overfitting and Generalization in Machine Learning (Lec 6)",
-          standard: `Based on your uploaded course lecture materials (**Lec 6.pdf**):
-
-1. **Definition of Overfitting**: Overfitting occurs when a statistical or machine learning model learns the detailed noise and idiosyncratic fluctuations of the training dataset to the extent that it negatively impacts its ability to generalize to unseen test data.
-2. **Key Symptoms & Indicators**:
-   • **Training Loss vs Validation Loss**: The training loss continues to decrease monotonically toward zero, while validation/test loss begins to plateau or diverge upward.
-   • **High Variance / Low Bias**: The model exhibits extremely high model capacity, fitting individual training points rather than underlying governing patterns.
-3. **Core Mitigation Techniques**:
-   • **Regularization**: $L_1$ (Lasso) and $L_2$ (Ridge / Weight Decay) penalties penalize large model weights.
-   • **Early Stopping**: Halting model training iterations at the epoch where validation performance peaks.
-   • **Data Augmentation & Dropout**: Randomly perturbing input data or deactivating neurons to enforce robust feature representation.
-   • **Cross-Validation**: Utilizing $k$-fold partitioning to ensure performance is consistent across independent folds.`,
-          analogy: `Think of a student preparing for an exam: instead of understanding the underlying mathematical concepts, they simply memorize the exact questions and numbers from practice tests word-for-word. 
-When they see the exact same practice question, they score 100%. But when given a new test with slightly modified numbers, they fail. That is overfitting!`,
-          socratic: `Consider how a model behaves across training epochs:
-1. When training loss continues falling but validation loss starts climbing, what does this divergence reveal about what the model is learning?
-2. How does introducing an L2 weight decay penalty mathematically constrain the model from memorizing individual outliers?
-3. In deep neural networks, why does randomly zeroing out hidden activations during Dropout prevent complex co-adaptations?`,
-          hindi: `कोर्स सामग्री (Lec 6) के अनुसार ओवरफिटिंग (Overfitting):
-
-1. **परिभाषा:** जब कोई मॉडल ट्रेनिंग डेटा के शोर (noise) और विवरणों को इतना अधिक याद कर लेता है कि वह नए (unseen) डेटा पर सही अनुमान नहीं लगा पाता।
-2. **संकेत:** ट्रेनिंग एरर कम होता जाता है, लेकिन वैलिडेशन एरर बढ़ने लगता है।
-3. **समाधान:** रेगुलराइजेशन (L1/L2), अर्ली स्टॉपिंग (Early Stopping), ड्रॉपआउट (Dropout) और अधिक डेटा का उपयोग।`,
-          marathi: `कोर्स मटेरिअल (Lec 6) नुसार ओव्हरफिटिंग (Overfitting):
-
-1. **व्याख्या:** जेव्हा एखादे मॉडेल ट्रेनिंग डेटातील नको असलेले तपशील इतके पाठ करते की ते नवीन डेटावर योग्य निष्कर्ष काढू शकत नाही, त्यास ओव्हरफिटिंग म्हणतात.
-2. **लक्षण:** ट्रेनिंग एरर कमी होतो पण टेस्ट एरर वाढत जातो.
-3. **उपाय:** रेगुलरायझेशन, ड्रॉपआउट, अर्ली स्टॉपिंग आणि डेटाचे प्रमाण वाढवणे.`,
-          citations: [
-            {
-              chunk_id: 110,
-              source_id: 37,
-              source_title: "Lec 6.pdf",
-              source_type: "pdf",
-              location: "Page 3",
-              page: 3,
-              excerpt: "Overfitting: Model fits the training data too closely, capturing noise rather than the underlying data generating distribution, causing poor generalization.",
-              media_url: "/api/media/37?page=3"
-            },
-            {
-              chunk_id: 111,
-              source_id: 37,
-              source_title: "Lec 6.pdf",
-              source_type: "pdf",
-              location: "Page 8",
-              page: 8,
-              excerpt: "Regularization techniques (L1/L2 weight penalties, early stopping, and dropout) constrain model complexity to prevent overfitting.",
-              media_url: "/api/media/37?page=8"
-            }
-          ]
-        },
-        bft_consensus: {
-          keywords: ["byzantine", "bft", "fault tolerance", "faults", "quorum", "3f+1", "pbft", "safety", "liveness"],
-          title: "Byzantine Fault Tolerance (BFT) Bounds & Guarantees",
-          standard: `According to the course foundations on Byzantine Fault Tolerance (BFT):
-
-• **System Model**: In an asynchronous or partially synchronous network with $N$ total nodes, the protocol tolerates up to $f$ arbitrary (Byzantine or malicious) faulty nodes where:
-  $$N \\ge 3f + 1$$
-• **Quorum Size**: To reach deterministic agreement despite $f$ silent and $f$ actively dishonest nodes, any decision requires a supermajority quorum of at least:
-  $$2f + 1 \\text{ nodes}$$
-• **Safety vs Liveness**: Under partial synchrony (after Global Stabilization Time), safety is guaranteed unconditionally (no two honest nodes commit conflicting states), and liveness is guaranteed once message delays fall within a known bound.`,
-          analogy: `Imagine a jury of 10 people where up to 3 might secretly want to sabotage the trial or lie. To prevent an innocent verdict from being overturned or hijacked, the law requires that at least 7 trustworthy votes (2f + 1) agree before any decision is made final.`,
-          socratic: `Let's work through the fault bounds:
-1. If there are $f$ nodes that simply crash and don't respond, how many responses can an honest node ever wait for without hanging forever? ($N - f$)
-2. Among those $N - f$ responses, what if another $f$ nodes are actively lying or Byzantine?
-3. What is the minimum overlap required between any two quorums to guarantee that at least one honest node is present in both?`,
-          hindi: `बायज़ेंटाइन फॉल्ट टॉलरेंस (BFT) के मुख्य नियम:
-
-1. **नोड्स की संख्या (N >= 3f + 1):** यदि नेटवर्क में f नोड्स खराब या धोखेबाज हैं, तो कम से कम 3f + 1 कुल नोड्स होने चाहिए।
-2. **कोरम (Quorum 2f + 1):** किसी भी निर्णय को अंतिम रूप देने के लिए कम से कम 2f + 1 नोड्स की सहमति अनिवार्य है।
-3. **सुरक्षा:** यह सुनिश्चित करता है कि आंशिक नेटवर्क देरी के बावजूद दो सही नोड्स कभी भी अलग-अलग निष्कर्ष पर न पहुंचें।`,
-          marathi: `बायझंटाईन फॉल्ट टॉलरन्स (BFT) चे मूळ नियम:
-
-1. **एकूण नोड्स (N >= 3f + 1):** प्रणालीमध्ये f नोड्स सदोष किंवा फसवणूक करणारे असले तरी कामकाज सुरळीत चालण्यासाठी किमान 3f + 1 नोड्स आवश्यक असतात.
-2. **कोरम:** अंतिम निर्णयासाठी किमान 2f + 1 नोड्सचा पाठिंबा लागतो.
-3. **सुरक्षा:** नेटवर्कमधील विस्कळीत परिस्थितीमध्येही प्रणालीचा निर्णय सुरक्षित आणि अचूक राहतो.`,
-          citations: [
-            {
-              chunk_id: 103,
-              source_id: 34,
-              source_title: "1_202402100007_Namrata Paralkar_ASS2.pptx",
-              source_type: "pptx",
-              location: "Slide 2",
-              slide_no: 2,
-              excerpt: "Byzantine Fault Tolerance requires N >= 3f + 1 to maintain both safety and liveness under partial synchrony assumptions.",
-              media_url: "/api/media/34?slide=2"
-            },
-            {
-              chunk_id: 104,
-              source_id: 35,
-              source_title: "1_1_202402100007_Namrata Paralkar_ASS2.pdf",
-              source_type: "pdf",
-              location: "Page 4",
-              page: 4,
-              excerpt: "Classical BFT quorum requirements state that intersection of any two quorums must contain at least one non-faulty node: 2(2f+1) - (3f+1) = f+1.",
-              media_url: "/api/media/35?page=4"
-            }
-          ]
-        },
-        throughput_benchmarks: {
-          keywords: ["benchmark", "throughput", "tps", "performance", "latency", "scale", "scaling", "evaluat", "results"],
-          title: "Empirical Performance & Throughput Scaling",
-          standard: `Based on the benchmark data in Slide 5 and Page 5 of your materials:
-
-• **Monolithic PBFT Bottleneck**: Traditional monolithic leader architectures plateau at roughly 1,200 - 1,800 TPS as the leader's outbound network link saturates.
-• **Decoupled Scaling**: By separating transaction streaming from ordering, Stratus achieves sustained throughput exceeding **10,000 to 25,000 TPS**.
-• **Latency Profile**: End-to-end consensus latency remains sub-second (~450ms - 800ms) across geographically distributed validator sets, as consensus rounds only exchange 32-byte hash commitments.`,
-          analogy: `Imagine shipping packages: instead of sending a heavy truck every time you need an official stamp, you send the cargo in cargo trains and only send an instant digital invoice to be stamped. The stamp office never gets clogged with physical shipping containers.`,
-          socratic: `Notice the scaling curves in the benchmark plots:
-1. Why does monolithic BFT latency shoot vertically upward once transaction volume exceeds 2,000 TPS?
-2. When only 32-byte cryptographic hashes are gossiped during voting rounds, why does network bandwidth stop being a limiting factor for the consensus engine?`,
-          hindi: `परफॉर्मेंस और थ्रूपुट बेंचमार्क (Slide 5 / Page 5):
-
-1. **पारंपरिक BFT:** 1,500 TPS के आसपास सीमित हो जाता है क्योंकि लीडर का नेटवर्क बैंडविड्थ भर जाता है।
-2. **डिकपल्ड सिस्टम:** 10,000 से 25,000 TPS तक आसानी से स्केल करता है।
-3. **लेटेंसी:** निर्णय लेने का समय 1 सेकंड से भी कम (450ms - 800ms) बना रहता है।`,
-          marathi: `कामगिरी आणि थ्रूपुट निष्कर्ष:
-
-1. **पारंपारिक वेग मर्यादा:** पारंपारिक लीडर नोडवर ताण आल्याने वेग 1,500 TPS वर अडकतो.
-2. **नव्या पद्धतीतील वेग:** डिकपलिंगमुळे वेग 10,000 ते 25,000 TPS पेक्षा जास्त वाढतो.
-3. **कमी लेटन्सी:** अवघ्या काही मिलिसेकंदांत सर्व व्यवहार सुरक्षितपणे पूर्ण होतात.`,
-          citations: [
-            {
-              chunk_id: 104,
-              source_id: 35,
-              source_title: "1_1_202402100007_Namrata Paralkar_ASS2.pdf",
-              source_type: "pdf",
-              location: "Page 5",
-              page: 5,
-              excerpt: "Analysis and benchmark comparisons demonstrate near-linear scaling when separating data transport from ordering, sustaining >10,000 TPS.",
-              media_url: "/api/media/35?page=5"
-            }
-          ]
-        },
-        video_lecture: {
-          keywords: ["video", "lecture", "clip", "youtube", "recording", "watch", "timestamp", "01:24"],
-          title: "Video Lecture Analysis: Decoupled Consensus Architecture",
-          standard: `Here is a clear, concise breakdown of the uploaded video lecture:
-
-1. **The Core Problem (00:30 - 01:10)**:
-   In monolithic BFT systems, the leader node is crushed by two simultaneous duties: broadcasting multi-megabyte transaction blocks and exchanging consensus votes with every validator.
-
-2. **The Key Solution Highlighted (01:24 - 02:15)**:
-   The lecturer demonstrates how transaction propagation is extracted into a standalone worker layer (shared mempool). All nodes continuously exchange transaction batches in parallel.
-
-3. **Consensus Ordering (02:15 - end)**:
-   The leader's proposal only contains compact batch identifiers (hashes). Consensus latency stays nearly flat even as transaction volume surges past 10,000 TPS.`,
-          analogy: `Think of a busy restaurant: if the head chef personally took orders at tables, bought the groceries, and cooked, the kitchen would collapse. 
-Instead, line cooks (worker replicas) stock ingredients in a shared cooler. The head chef only calls out ticket numbers! That is how this video explains reaching high speeds.`,
-          socratic: `As shown in the video around timestamp [01:24]:
-1. Why does separating the heavy payload transit from the lightweight voting rounds prevent the leader from becoming a single point of congestion?
-2. What cryptographic check (Proof of Availability) ensures a leader cannot trick replicas into ordering missing batches?`,
-          hindi: `अपलोड किए गए वीडियो व्याख्यान का सटीक सार:
-
-1. **मुख्य समस्या (00:30 - 01:10):** लीडर नोड पर डेटा भेजने और वोटिंग कराने का दोहरा बोझ नेटवर्क को धीमा कर देता है।
-2. **वीडियो में समाधान (Timestamp 01:24):** लेन-देन का प्रसार (Mempool) अलग परत में होता है। सभी नोड्स एक साथ डेटा शेयर करते हैं।
-3. **नतीजा:** लीडर केवल छोटे हैश पर मतदान कराता है, जिससे सिस्टम 10,000 TPS की तेज गति से काम करता है।`,
-          marathi: `व्हिडिओ व्याख्यानातील प्रमुख मुद्दे:
-
-1. **मुख्य अडचण:** मुख्य लीडर नोडवर सर्व डेटा पाठवण्याचा ताण आल्यामुळे नेटवर्कची गती मंदावते.
-2. **व्हिडिओतील उपाय (वेळ 01:24):** डेटा ट्रान्सपोर्ट आणि मतदानाची फेरी पूर्णपणे वेगळी केली जाते. सर्व नोड्स आधीच डेटा मिळवतात.
-3. **फायदा:** यामुळे नेटवर्कचा वेग 10,000 TPS च्या पुढे जातो आणि प्रणाली पूर्णपणे स्थिर राहते.`,
-          citations: [
-            {
-              chunk_id: 105,
-              source_id: 36,
-              source_title: "YouTube: 4nSI0by9-lg (Lecture)",
-              source_type: "video",
-              location: "Video @ 01:24",
-              start_sec: 84,
-              excerpt: "As shown on the architectural diagram at 01:24, separating transaction transport from consensus ordering eliminates the leader network ingress bottleneck.",
-              media_url: "/api/media/36?t=84"
-            },
-            {
-              chunk_id: 101,
-              source_id: 34,
-              source_title: "1_202402100007_Namrata Paralkar_ASS2.pptx",
-              source_type: "pptx",
-              location: "Slide 4",
-              slide_no: 4,
-              excerpt: "Stratus introduces a shared mempool architecture. Replicas disseminate transaction batches independently while the leader proposes only batch IDs.",
-              media_url: "/api/media/34?slide=4"
-            }
-          ]
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now() + 1,
+          role: "assistant",
+          content: "Network error: Unable to connect to the LearnLoop tutor service. Please ensure the backend is running.",
+          status: "not_in_material",
+          citations: []
         }
-      };
-
-      // --- Strict Resource Filtering & Query Matching ---
-      const lower = textToSend.toLowerCase();
-      const isVideoQuery = lower.includes("video") || lower.includes("lecture") || lower.includes("clip") || lower.includes("youtube") || lower.includes("watch");
-      const isBftQuery = lower.includes("byzantine") || lower.includes("bft") || lower.includes("fault") || lower.includes("quorum") || lower.includes("3f+1") || lower.includes("safety");
-      const isBenchmarkQuery = lower.includes("benchmark") || lower.includes("throughput") || lower.includes("tps") || lower.includes("latency") || lower.includes("performance") || lower.includes("scale") || lower.includes("speed");
-      const isMempoolQuery = lower.includes("mempool") || lower.includes("decouple") || lower.includes("decoupling") || lower.includes("stratus") || lower.includes("dissemination") || lower.includes("batch") || lower.includes("consensus");
-      const isOverfittingQuery = lower.includes("overfit") || lower.includes("overfitting") || lower.includes("regularization") || lower.includes("generalization") || lower.includes("bias-variance") || lower.includes("lec 6");
-
-      // Check if user specifically asked about a resource type
-      const isAskingPptOnly = lower.includes("ppt") || lower.includes("slide") || lower.includes("presentation");
-      const isAskingPdfOnly = lower.includes("pdf") || lower.includes("document") || lower.includes("paper") || lower.includes("report");
-
-      // Check for Study Generators
-      const isStudyGuide = lower.includes("study guide") || lower.includes("topics outline") || lower.includes("exam preparation");
-      const isFaq = lower.includes("faq") || lower.includes("frequently asked questions");
-      const isQuiz = lower.includes("quiz") || lower.includes("practice review questions") || lower.includes("test me");
-      const isRemediation = lower.includes("remediat") || lower.includes("weak point") || lower.includes("misconception") || lower.includes("mistake");
-      const isSummary = lower.includes("summary") || lower.includes("core concept") || lower.includes("summarize") || lower.includes("overview");
-
-      // Check for Out of Material Queries (Refusal Gate)
-      const isOutOfMaterial = 
-        lower.includes("recipe") || lower.includes("cookies") || lower.includes("cake") || 
-        lower.includes("world cup") || lower.includes("cricket") || lower.includes("football") ||
-        lower.includes("movie") || lower.includes("actor") || lower.includes("song") ||
-        lower.includes("quantum") || lower.includes("weather") || lower.includes("capital of");
-
-      if (isOutOfMaterial) {
-        fallbackStatus = "not_in_material";
-        fallbackAnswer = "This topic was not found in your uploaded course materials. Would you like me to explain it using general knowledge?";
-        coverageNote = `Refusal Gate Triggered: Zero relevant chunks found matching '${textToSend.slice(0, 40)}' in the selected course materials.`;
-        fallbackCitations = [];
-      } else if (isStudyGuide) {
-        const userName = currentUser?.name || "Student";
-        const isAarav = currentUser?.id === "1" || userName.includes("Aarav");
-        const isMeera = currentUser?.id === "2" || userName.includes("Meera");
-
-        if (isAarav) {
-          fallbackAnswer = `📚 Personalized Study Guide for ${userName} (Focus: Stratus & High-Throughput BFT)
-
-🎯 Current Mastery Analysis:
-• Strong: Classical Byzantine Fault Tolerance (PBFT) & Safety bounds (N >= 3f + 1)
-• High Priority Focus: Stratus Shared Mempool Decoupling & Leader Ingress Bottlenecks
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. Core Topics & Architectural Foundations
-• Classical BFT Limiters: Primary node bottlenecking due to monolithic block proposal + transaction broadcast.
-• Stratus Architecture: Decoupled dissemination (all replicas stream batches) vs consensus (leader proposes batch IDs).
-• Latency vs Throughput: How pipelined proposals sustain >10,000 TPS under WAN latency.
-
-2. Prerequisite Check & Targeted Practice
-• Verify understanding: Why does decoupling prevent single-leader bandwidth saturation?
-• Review Slide 4: Shared-mempool topology and signature threshold checks.
-
-3. Exam Preparation Checklist:
- [x] Master: Byzantine Quorum math: N >= 3f + 1
- [ ] Review: Stratus dual-layer consensus commit phase
- [ ] Practice: Throughput scaling bottleneck analysis under network faults`;
-        } else if (isMeera) {
-          fallbackAnswer = `📚 Targeted Improvement Study Guide for ${userName} (Progress: 35% → 65%)
-
-🎯 Current Mastery Analysis:
-• In Progress: BFT consensus states and state machine replication
-• Next Milestone: Scaling architectures and transaction mempools
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. Core Concepts to Solidify
-• Byzantine Fault Tolerance: How systems guarantee safety and liveness under partial synchrony.
-• Decoupling Principle: Distinguishing data dissemination from ordering rounds.
-• Leader Proposal Flow: Transaction IDs vs full payload broadcasts.
-
-2. Exam Preparation Checklist:
- [x] Understand: Consensus vs dissemination roles
- [ ] Review: Quorum thresholds and view-change protocols
- [ ] Practice: Comparing Stratus vs traditional PBFT round complexity`;
-        } else {
-          fallbackAnswer = `📚 Comprehensive Course Study Guide: Distributed Consensus & Scalability
-
-🎯 Diagnostic Track: Foundations & Architectural Principles
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. Major Topics Outline
-• Topic 1: Byzantine Fault Tolerance (BFT) Principles & Safety Bounds (N >= 3f + 1).
-• Topic 2: Throughput Bottlenecks in Classical Monolithic Consensus Protocols.
-• Topic 3: Modern Decoupled Architectures (Stratus Shared Mempool).
-• Topic 4: High-Performance Ledger Benchmark Comparisons (>10,000 TPS).
-
-2. Core Prerequisites
-• Network Models: Synchronous vs partially synchronous communication assumptions.
-• Cryptographic Primitives: Digital signatures, batch hashing, Merkle commitments.
-
-3. Exam Preparation Checklist:
- [ ] Review Slide 2: Distributed ledger scalability layers & trade-offs.
- [ ] Review Slide 4 & Page 2: Shared mempool architecture & batch ID proposals.
- [ ] Review Page 5: Empirical benchmark curves and linear scaling proofs.`;
-        }
-
-        fallbackCitations = [
-          {
-            chunk_id: 101,
-            source_id: 34,
-            source_title: "1_202402100007_Namrata Paralkar_ASS2.pptx",
-            source_type: "pptx",
-            location: "Slide 4",
-            slide_no: 4,
-            excerpt: "Stratus introduces a shared mempool architecture. Replicas disseminate transaction batches independently while the leader proposes only batch IDs.",
-            media_url: "/api/media/34?slide=4"
-          },
-          {
-            chunk_id: 104,
-            source_id: 35,
-            source_title: "1_1_202402100007_Namrata Paralkar_ASS2.pdf",
-            source_type: "pdf",
-            location: "Page 5",
-            page: 5,
-            excerpt: "Analysis and benchmark comparisons demonstrate near-linear scaling when separating data transport from ordering.",
-            media_url: "/api/media/35?page=5"
-          }
-        ];
-      } else if (isRemediation) {
-        const userName = currentUser?.name || "Student";
-        fallbackAnswer = `🎯 Targeted Conceptual Remediation for ${userName}: Leader Bottleneck Fallacy in Stratus Mempool
-        
-Evidence from your Quiz Diagnostic Attempts:
-• You previously flagged high confidence (4/4) on questions claiming the primary leader node streams full transaction payloads to all replicas.
-• Course Source Reality: Stratus explicitly decouples data propagation from ordering rounds.
-
-Key Mental Model Shift:
-1. Replicas: Collect incoming transactions and broadcast batches directly to all other peers via the shared mempool layer.
-2. Leader: Coordinates lightweight Byzantine consensus proposing compact batch IDs (hashes) rather than multi-megabyte blocks.
-3. Proof of Availability (PAB): Ensures 2f+1 replicas hold and validate batch contents before final commit.
-
-Takeaway Rule:
-In modern decoupled BFT (Stratus), the leader is never saturated by bulk transaction dissemination.`;
-        fallbackCitations = [
-          {
-            chunk_id: 101,
-            source_id: 34,
-            source_title: "1_202402100007_Namrata Paralkar_ASS2.pptx",
-            source_type: "pptx",
-            location: "Slide 4",
-            slide_no: 4,
-            excerpt: "Stratus introduces a shared mempool architecture to solve the leader network ingress bottleneck.",
-            media_url: "/api/media/34?slide=4"
-          }
-        ];
-      } else if (isFaq) {
-        fallbackAnswer = `❓ Course Material FAQ Guide:
-
-Q1: What is the primary bottleneck in traditional BFT consensus?
-A: In traditional BFT, the primary node must both broadcast full transaction bodies and coordinate voting, saturating its network bandwidth.
-
-Q2: How does Stratus resolve this communication bottleneck?
-A: By decoupling transaction dissemination (worker replicas broadcast raw batches) from consensus sequencing (leaders propose only compact batch IDs).
-
-Q3: What fault tolerance guarantee is preserved?
-A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes under partial synchrony.`;
-        fallbackCitations = [
-          {
-            chunk_id: 101,
-            source_id: 34,
-            source_title: "1_202402100007_Namrata Paralkar_ASS2.pptx",
-            source_type: "pptx",
-            location: "Slide 4",
-            slide_no: 4,
-            excerpt: "Stratus introduces a shared mempool architecture to solve the leader network ingress bottleneck.",
-            media_url: "/api/media/34?slide=4"
-          }
-        ];
-      } else if (isQuiz) {
-        fallbackAnswer = `📝 Practice Review Quiz (5 Questions):
-
-1. In a network of 10 nodes, what is the maximum number of Byzantine faulty nodes tolerable under BFT (N >= 3f + 1)?
-   Answer: f = 3 nodes (3 * 3 + 1 = 10).
-
-2. What payload does the leader propose in Stratus consensus?
-   Answer: Compact batch identifiers (hashes), not raw transaction bodies.
-
-3. Which layer in Stratus is responsible for transaction dissemination?
-   Answer: The decoupled shared-mempool layer run concurrently across all replicas.
-
-4. What throughput milestone is sustained by pipelined batch proposals?
-   Answer: Over 10,000 TPS without inflating consensus commit latency.
-
-5. Why is partial synchrony assumed in practical BFT protocols?
-   Answer: To balance safety and liveness without risking FLP impossibility under purely asynchronous networks.`;
-        fallbackCitations = [
-          {
-            chunk_id: 103,
-            source_id: 34,
-            source_title: "1_202402100007_Namrata Paralkar_ASS2.pptx",
-            source_type: "pptx",
-            location: "Slide 2",
-            slide_no: 2,
-            excerpt: "Scalability bottlenecks, latency tradeoffs, and BFT tolerance thresholds.",
-            media_url: "/api/media/34?slide=2"
-          }
-        ];
-      } else if (isSummary && !isVideoQuery && !isBftQuery && !isBenchmarkQuery) {
-        fallbackAnswer = `📋 Summary of Selected Course Materials:
-
-1. **Byzantine Fault Tolerance (BFT)**:
-   Distributed ledger safety and liveness requiring $N \\ge 3f + 1$ under partial synchrony.
-2. **Decoupled Mempool Design (Stratus)**:
-   Separates heavy raw transaction broadcasting (carried out in parallel by all replicas) from lightweight consensus sequence ordering (handled by the leader proposing batch IDs).
-3. **Throughput Scaling**:
-   Unlocks throughput exceeding 10,000 TPS with flat commit latency by removing the leader network ingress bottleneck.`;
-        fallbackCitations = [
-          {
-            chunk_id: 101,
-            source_id: 34,
-            source_title: "1_202402100007_Namrata Paralkar_ASS2.pptx",
-            source_type: "pptx",
-            location: "Slide 4",
-            slide_no: 4,
-            excerpt: "Stratus introduces a shared mempool architecture. Replicas disseminate transaction batches independently while the leader proposes only batch IDs.",
-            media_url: "/api/media/34?slide=4"
-          },
-          {
-            chunk_id: 104,
-            source_id: 35,
-            source_title: "1_1_202402100007_Namrata Paralkar_ASS2.pdf",
-            source_type: "pdf",
-            location: "Page 5",
-            page: 5,
-            excerpt: "Analysis and benchmark comparisons demonstrate near-linear scaling when separating data transport from ordering.",
-            media_url: "/api/media/35?page=5"
-          }
-        ];
-      } else {
-        // --- Match user question to specific grounded concept ---
-        let selectedTopic: TopicChunk = KNOWLEDGE_BASE.overfitting;
-
-        if (isOverfittingQuery) {
-          selectedTopic = KNOWLEDGE_BASE.overfitting;
-        } else if (isVideoQuery) {
-          selectedTopic = KNOWLEDGE_BASE.video_lecture;
-        } else if (isBftQuery) {
-          selectedTopic = KNOWLEDGE_BASE.bft_consensus;
-        } else if (isBenchmarkQuery) {
-          selectedTopic = KNOWLEDGE_BASE.throughput_benchmarks;
-        } else if (isMempoolQuery) {
-          selectedTopic = KNOWLEDGE_BASE.mempool_decoupling;
-        } else {
-          selectedTopic = KNOWLEDGE_BASE.overfitting;
-        }
-
-        // Apply requested pedagogical style or language
-        if (style === "Analogy") {
-          fallbackAnswer = selectedTopic.analogy;
-        } else if (style === "Socratic") {
-          fallbackAnswer = selectedTopic.socratic;
-        } else if (language === "Hindi") {
-          fallbackAnswer = selectedTopic.hindi;
-        } else if (language === "Marathi") {
-          fallbackAnswer = selectedTopic.marathi;
-        } else {
-          fallbackAnswer = selectedTopic.standard;
-        }
-
-        // Filter citations to match what the user asked and what is currently selected
-        fallbackCitations = selectedTopic.citations.filter(c => {
-          // If user specifically asked about video, only return video citations
-          if (isVideoQuery && c.source_type !== "video") return false;
-          // If user specifically asked about PPT/slides, only return pptx citations
-          if (isAskingPptOnly && c.source_type !== "pptx") return false;
-          // If user specifically asked about PDF/document, only return pdf citations
-          if (isAskingPdfOnly && c.source_type !== "pdf") return false;
-          // Only cite sources that are currently active in the user's selected sources
-          if (selectedSourceIds.length > 0 && !selectedSourceIds.includes(c.source_id)) {
-            return false;
-          }
-          return true;
-        });
-
-        // Fallback: If filter left 0 citations but source exists in active context, retain the best matching citation
-        if (fallbackCitations.length === 0 && selectedTopic.citations.length > 0) {
-          const matchingActive = selectedTopic.citations.find(c => selectedSourceIds.includes(c.source_id));
-          if (matchingActive) {
-            fallbackCitations = [matchingActive];
-          } else if (selectedTopic.citations[0]) {
-            fallbackCitations = [selectedTopic.citations[0]];
-          }
-        }
-      }
-
-      const fallbackMsg: MessageItem = {
-        id: Date.now() + 1,
-        role: "assistant",
-        content: fallbackAnswer,
-        status: fallbackStatus,
-        citations: fallbackCitations,
-        coverage_note: coverageNote,
-        mode: "source"
-      };
-
-      setMessages(prev => [...prev, fallbackMsg]);
-      if (fallbackCitations.length > 0) {
-        setViewerContent(fallbackCitations[0]);
-      }
-
-      // Auto-save rich generators directly into Studio Notes
-      if (lower.includes("study guide") || lower.includes("summary") || lower.includes("faq") || lower.includes("quiz") || lower.includes("remediat") || lower.includes("misconception")) {
-        const genType = lower.includes("study guide")
-          ? "guide"
-          : lower.includes("summary")
-          ? "summary"
-          : lower.includes("faq")
-          ? "faq"
-          : lower.includes("quiz")
-          ? "quiz"
-          : "guide";
-        const titlePrefix = lower.includes("study guide")
-          ? `Study Guide: ${currentUser?.name || "Student"}`
-          : lower.includes("summary")
-          ? "Executive Summary"
-          : lower.includes("faq")
-          ? "Course FAQ Doc"
-          : lower.includes("quiz")
-          ? "Review Practice Quiz"
-          : `Remediation: ${currentUser?.name || "Student"}`;
-
-        const autoNote: StudyNote = {
-          id: `note-${Date.now()}`,
-          title: titlePrefix,
-          type: genType as any,
-          content: fallbackAnswer,
-          timestamp: "Generated just now"
-        };
-        setNotes(prev => [autoNote, ...prev]);
-        setRightPanelTab("studio");
-      }
+      ]);
     }
   };
 
@@ -1338,6 +781,98 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
     }
 
     sendMessage(false, prompt);
+  };
+
+  // Google Gemini NotebookLM: Mind Map Generation
+  const handleGenerateMindMap = async () => {
+    setIsLoadingMindMap(true);
+    setIsMindMapOpen(true);
+    try {
+      const res = await fetch(getApiUrl("/api/notebook/mindmap"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          course_id: courseId,
+          source_ids: selectedSourceIds.length > 0 ? selectedSourceIds : undefined,
+          topic: "Course Knowledge Graph"
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMindMapData(data);
+        showToast("Interactive Mind Map generated from your course materials!", "success");
+
+        // Also save structured summary as a Studio Note
+        const branches = data.nodes?.filter((n: any) => n.level === 1) || [];
+        const outlineText = branches.map((b: any, idx: number) => {
+          const subs = data.nodes?.filter((n: any) => n.level === 2 && data.edges?.some((e: any) => e.from === b.id && e.to === n.id)) || [];
+          return `${idx + 1}. ${b.label}\n` + subs.map((s: any) => `   • ${s.label}`).join("\n");
+        }).join("\n\n");
+
+        const mindMapNote: StudyNote = {
+          id: `note-${Date.now()}`,
+          title: `Mind Map: ${data.title || "Course Concepts"}`,
+          type: "guide",
+          content: outlineText || "Visual knowledge hierarchy synthesized from verified course materials.",
+          timestamp: "Generated just now"
+        };
+        setNotes(prev => [mindMapNote, ...prev]);
+      } else {
+        showToast("Could not generate mind map. Please check connection.", "warning");
+      }
+    } catch (err) {
+      console.error("Mind map error", err);
+      showToast("Network error generating mind map.", "warning");
+    } finally {
+      setIsLoadingMindMap(false);
+    }
+  };
+
+  // Google Gemini NotebookLM: 16:9 Slide Deck (.PPTX) Generation
+  const handleGeneratePPT = async () => {
+    setIsGeneratingPPT(true);
+    showToast("Synthesizing 16:9 widescreen presentation deck with python-pptx...", "info");
+    try {
+      const res = await fetch(getApiUrl("/api/notebook/generate-presentation"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          course_id: courseId,
+          source_ids: selectedSourceIds.length > 0 ? selectedSourceIds : undefined,
+          title: "Course Study Presentation"
+        })
+      });
+
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `LearnLoop_Presentation_Course_${courseId}.pptx`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        showToast("Presentation deck (.pptx) downloaded successfully!", "success");
+
+        const pptNote: StudyNote = {
+          id: `note-${Date.now()}`,
+          title: "Presentation Slides (.PPTX)",
+          type: "summary",
+          content: "Downloaded 16:9 widescreen presentation deck based on verified course materials with title slide, concept deep dives, and key conclusions.",
+          timestamp: "Downloaded just now"
+        };
+        setNotes(prev => [pptNote, ...prev]);
+      } else {
+        showToast("Could not generate presentation deck. Please check backend.", "warning");
+      }
+    } catch (err) {
+      console.error("PPT generation error", err);
+      showToast("Connection error while generating presentation.", "warning");
+    } finally {
+      setIsGeneratingPPT(false);
+    }
   };
 
   // Convert an assistant response into a persistent Studio Note
@@ -1414,7 +949,7 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
   );
 
   return (
-    <div className="flex h-full w-full bg-background rounded-xl border overflow-hidden shadow-xs relative">
+    <div className="flex h-full max-h-full w-full min-h-0 min-w-0 bg-background rounded-xl border overflow-hidden shadow-xs relative">
       {/* Human-Friendly Toast Notification Banner */}
       {toastMessage && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-3 duration-300 pointer-events-none">
@@ -1458,7 +993,7 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
           </div>
         </div>
       ) : (
-        <aside className="w-64 xl:w-72 border-r bg-card flex flex-col shrink-0 select-none transition-all">
+        <aside className="w-64 xl:w-72 border-r bg-card flex flex-col h-full min-h-0 shrink-0 select-none overflow-hidden transition-all">
           {/* Source Deck Header */}
           <div className="p-3 border-b flex items-center justify-between bg-muted/20">
             <div className="flex items-center gap-2 min-w-0">
@@ -1589,7 +1124,7 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
         </div>
 
         {/* Source List */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+        <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1.5">
           {filteredSources.length === 0 ? (
             <div className="py-8 text-center text-xs text-muted-foreground">
               No matching sources found.
@@ -1663,7 +1198,7 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
         </div>
 
         {/* Chat Sessions list bottom tray */}
-        <div className="border-t p-2.5 bg-muted/20">
+        <div className="border-t p-2.5 bg-muted/20 shrink-0">
           <div className="flex items-center justify-between mb-1.5 px-1">
             <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
               Chat Sessions
@@ -1708,7 +1243,7 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
       {/* CENTER PANEL: CHAT & GROUNDED REASONING CANVAS                             */}
       {/* ========================================================================= */}
       <main
-        className="flex-1 flex flex-col min-w-0 bg-background relative overflow-hidden"
+        className="flex-1 flex flex-col h-full min-h-0 min-w-0 bg-background relative overflow-hidden"
         onDragOver={e => {
           e.preventDefault();
           setIsDragging(true);
@@ -1791,45 +1326,44 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
         </div>
 
         {/* Chat Message Scroll Area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-6">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center text-center max-w-lg mx-auto h-full py-12 space-y-4">
               <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary shadow-xs">
                 <Compass className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-foreground">Grounded Notebook Chat</h3>
+                <h3 className="text-lg font-bold text-foreground">Your Personal Study Companion</h3>
                 <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
-                  Every answer is strictly anchored in your uploaded course materials with
-                  interactive slide, page, and video citations.
+                  I&apos;ve read through your uploaded lecture slides, notes, and videos. Ask me anything, or use the study tools on the right to build a mind map, study guide, or presentation deck.
                 </p>
               </div>
 
               {/* Starter Query Chips */}
               <div className="flex flex-wrap gap-2 justify-center pt-2">
                 <button
-                  onClick={() => sendMessage(false, "Explain the core concepts covered in the attached materials.")}
-                  className="px-3 py-1.5 rounded-full bg-secondary hover:bg-secondary/80 border text-xs font-medium text-foreground transition-colors"
+                  onClick={() => sendMessage(false, "Can you give me a friendly overview of the key concepts covered in our materials?")}
+                  className="px-3 py-1.5 rounded-full bg-secondary hover:bg-secondary/80 border text-xs font-medium text-foreground transition-colors cursor-pointer"
                 >
-                  📘 Summarize Core Concepts
+                  📘 Overview of Key Concepts
                 </button>
                 <button
-                  onClick={() => sendMessage(false, "What is Stratus and how does it decouple consensus?")}
-                  className="px-3 py-1.5 rounded-full bg-secondary hover:bg-secondary/80 border text-xs font-medium text-foreground transition-colors"
+                  onClick={() => sendMessage(false, "Explain Stratus and how it decouples consensus in simple terms.")}
+                  className="px-3 py-1.5 rounded-full bg-secondary hover:bg-secondary/80 border text-xs font-medium text-foreground transition-colors cursor-pointer"
                 >
-                  ⚡ What is Stratus?
+                  ⚡ Explain Stratus Simply
                 </button>
                 <button
-                  onClick={() => sendMessage(false, "What are the Byzantine fault tolerance bounds?")}
-                  className="px-3 py-1.5 rounded-full bg-secondary hover:bg-secondary/80 border text-xs font-medium text-foreground transition-colors"
+                  onClick={() => sendMessage(false, "What are the Byzantine fault tolerance bounds in our notes?")}
+                  className="px-3 py-1.5 rounded-full bg-secondary hover:bg-secondary/80 border text-xs font-medium text-foreground transition-colors cursor-pointer"
                 >
                   🛡️ BFT Tolerance Bounds
                 </button>
                 <button
                   onClick={() => sendMessage(false, "Explain quantum entanglement theory")}
-                  className="px-3 py-1.5 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-xs font-medium text-amber-600 dark:text-amber-400 transition-colors"
+                  className="px-3 py-1.5 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-xs font-medium text-amber-600 dark:text-amber-400 transition-colors cursor-pointer"
                 >
-                  🧪 Off-Material Query (Refusal Test)
+                  🧪 Test Non-Course Question
                 </button>
               </div>
             </div>
@@ -1851,24 +1385,24 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
                     <div className="space-y-3">
                       <div className="flex items-center gap-2 text-amber-500 font-semibold text-xs">
                         <AlertTriangle className="h-4 w-4" />
-                        <span>Source Grounding Refusal Gate</span>
+                        <span>Not Found in Your Notes</span>
                       </div>
                       <p className="text-xs text-foreground/90 leading-relaxed">{m.content}</p>
                       {m.coverage_note && (
                         <div className="text-[11px] bg-amber-500/10 text-amber-600 dark:text-amber-400 p-2 rounded border border-amber-500/20">
-                          <strong>Grounding Note:</strong> {m.coverage_note}
+                          <strong>Note from your materials:</strong> {m.coverage_note}
                         </div>
                       )}
                       <Button
                         size="sm"
                         variant="default"
-                        className="bg-amber-600 hover:bg-amber-700 text-white text-xs h-7"
+                        className="bg-amber-600 hover:bg-amber-700 text-white text-xs h-7 cursor-pointer"
                         onClick={() => {
                           const lastUser = messages[idx - 1]?.content || "";
                           sendMessage(true, lastUser);
                         }}
                       >
-                        Explain with Outside Knowledge
+                        Explain Using General Knowledge
                       </Button>
                     </div>
                   ) : (
@@ -1885,7 +1419,7 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
                             variant="outline"
                             className="text-[10px] text-amber-500 border-amber-500/30 bg-amber-500/5"
                           >
-                            Outside Knowledge (Unchecked)
+                            Explained Using General Knowledge
                           </Badge>
                         </div>
                       )}
@@ -1894,8 +1428,8 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
                       {m.citations && m.citations.length > 0 && (
                         <div className="mt-3 pt-3 border-t">
                           <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center justify-between">
-                            <span>Grounded Sources ({m.citations.length})</span>
-                            <span className="text-[9px] text-primary">Click to inspect</span>
+                            <span>Verified Citations ({m.citations.length})</span>
+                            <span className="text-[9px] text-primary">Click to inspect exact page</span>
                           </div>
                           <div className="flex flex-wrap gap-1.5">
                             {m.citations.map((c, cIdx) => (
@@ -2005,7 +1539,7 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
                   style={{ animationDelay: "0.4s" }}
                 />
                 <span className="text-xs text-muted-foreground ml-2">
-                  Retrieving grounded chunks & reasoning...
+                  Thinking...
                 </span>
               </div>
             </div>
@@ -2015,7 +1549,70 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
         </div>
 
         {/* Input Bar */}
-        <div className="p-3 border-t bg-card/60 backdrop-blur">
+        <div className="p-3 border-t bg-card/60 backdrop-blur relative shrink-0">
+          {/* Autocomplete Popup Menu for @filename and /commands */}
+          {inputValue.includes("@") && (
+            <div className="absolute bottom-full mb-2 left-3 right-3 max-h-48 overflow-y-auto bg-popover/95 backdrop-blur-md border rounded-xl shadow-xl p-1.5 z-50 text-xs">
+              <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+                <span>Reference specific file in prompt</span>
+                <span className="text-[9px]">Click or press Enter</span>
+              </div>
+              {sources
+                .filter(s => {
+                  const afterAt = inputValue.slice(inputValue.lastIndexOf("@") + 1).toLowerCase();
+                  return !afterAt || s.name.toLowerCase().includes(afterAt);
+                })
+                .map(s => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => {
+                      const atIdx = inputValue.lastIndexOf("@");
+                      const newText = inputValue.slice(0, atIdx) + `@${s.name} `;
+                      setInputValue(newText);
+                      if (!selectedSourceIds.includes(s.id)) {
+                        setSelectedSourceIds(prev => [...prev, s.id]);
+                      }
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-primary/10 hover:text-primary flex items-center justify-between transition-colors"
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <FileText className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                      <span className="font-medium truncate">{s.name}</span>
+                    </div>
+                    <Badge variant="outline" className="text-[9px] uppercase">
+                      {s.source_type}
+                    </Badge>
+                  </button>
+                ))}
+            </div>
+          )}
+
+          {/* Slash Commands Helper */}
+          {inputValue.startsWith("/") && !inputValue.includes(" ") && (
+            <div className="absolute bottom-full mb-2 left-3 max-w-sm overflow-hidden bg-popover/95 backdrop-blur-md border rounded-xl shadow-xl p-1.5 z-50 text-xs">
+              <div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                Quick Commands
+              </div>
+              <button
+                type="button"
+                onClick={() => setInputValue("/explain ")}
+                className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-primary/10 hover:text-primary flex items-center gap-2"
+              >
+                <span className="font-mono font-bold text-primary">/explain</span>
+                <span className="text-muted-foreground">Explain concept or file in depth</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInputValue("/summary ")}
+                className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-primary/10 hover:text-primary flex items-center gap-2"
+              >
+                <span className="font-mono font-bold text-primary">/summary</span>
+                <span className="text-muted-foreground">Summarize the selected presentation or PDF</span>
+              </button>
+            </div>
+          )}
+
           <div className="flex items-center bg-background border rounded-xl overflow-hidden shadow-xs focus-within:ring-1 focus-within:ring-primary/50 transition-all">
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -2027,7 +1624,7 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
             <input
               type="text"
               className="flex-1 bg-transparent px-2 py-3 text-xs outline-none text-foreground placeholder:text-muted-foreground"
-              placeholder="Ask a question about your uploaded sources..."
+              placeholder="Ask a question, type @file to target a source, or /summary..."
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
               onKeyDown={e => {
@@ -2049,12 +1646,13 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
           </div>
           <div className="flex items-center justify-between mt-2 px-1 text-[10px] text-muted-foreground">
             <span>
-              Searching {selectedSourceIds.length} of {sources.length} sources
+              Searching {selectedSourceIds.length} of {sources.length} sources (Type @ to target a file)
             </span>
-            <span>Strict citation contract active</span>
+            <span>Grounded in your verified notes</span>
           </div>
         </div>
       </main>
+
 
       {/* ========================================================================= */}
       {/* RIGHT PANEL: NOTEBOOK STUDIO & SOURCE VIEWER                               */}
@@ -2081,9 +1679,9 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
           </div>
         </div>
       ) : (
-        <aside className="w-80 border-l bg-card flex flex-col shrink-0 transition-all">
+        <aside className="w-80 border-l bg-card flex flex-col h-full min-h-0 shrink-0 overflow-hidden transition-all">
           {/* Tab Header: Studio vs Source Viewer */}
-          <div className="flex items-center border-b bg-muted/20 pr-1">
+          <div className="flex items-center border-b bg-muted/20 pr-1 shrink-0">
             <button
               onClick={() => setRightPanelTab("studio")}
               className={`flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 border-b-2 transition-all ${
@@ -2119,7 +1717,7 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
 
           {/* Tab 1: Studio (NotebookLM Study Artifacts Generator) */}
           {rightPanelTab === "studio" ? (
-            <div className="flex-1 overflow-y-auto p-3.5 space-y-4">
+            <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-4">
               <div>
                 <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                   Quick Study Generators
@@ -2128,13 +1726,47 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-auto py-2 px-2 flex flex-col items-start gap-1 text-left border bg-background hover:bg-muted"
-                    onClick={() => triggerStudioTool("summary")}
+                    className="h-auto py-2 px-2 flex flex-col items-start gap-1 text-left border border-indigo-500/30 bg-indigo-500/5 hover:bg-indigo-500/10 transition-all shadow-2xs group cursor-pointer"
+                    onClick={handleGenerateMindMap}
+                    disabled={isLoadingMindMap}
                   >
-                    <FileSpreadsheet className="h-3.5 w-3.5 text-primary" />
-                    <span className="font-semibold text-xs text-foreground">Summary</span>
-                    <span className="text-[10px] text-muted-foreground">Key takeaways</span>
+                    <div className="flex items-center justify-between w-full">
+                      {isLoadingMindMap ? (
+                        <Loader2 className="h-3.5 w-3.5 text-indigo-500 animate-spin" />
+                      ) : (
+                        <Network className="h-3.5 w-3.5 text-indigo-500 group-hover:scale-110 transition-transform" />
+                      )}
+                      <Badge variant="secondary" className="text-[9px] h-3.5 px-1 bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-mono">
+                        Visual
+                      </Badge>
+                    </div>
+                    <span className="font-semibold text-xs text-foreground">Mind Map</span>
+                    <span className="text-[10px] text-muted-foreground">Concept hierarchy</span>
                   </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-auto py-2 px-2 flex flex-col items-start gap-1 text-left border border-orange-500/30 bg-orange-500/5 hover:bg-orange-500/10 transition-all shadow-2xs group cursor-pointer"
+                    onClick={handleGeneratePPT}
+                    disabled={isGeneratingPPT}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      {isGeneratingPPT ? (
+                        <Loader2 className="h-3.5 w-3.5 text-orange-500 animate-spin" />
+                      ) : (
+                        <Presentation className="h-3.5 w-3.5 text-orange-500 group-hover:scale-110 transition-transform" />
+                      )}
+                      <Badge variant="secondary" className="text-[9px] h-3.5 px-1 bg-orange-500/15 text-orange-600 dark:text-orange-400 font-mono">
+                        16:9 Deck
+                      </Badge>
+                    </div>
+                    <span className="font-semibold text-xs text-foreground">Slide Deck</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {isGeneratingPPT ? "Exporting PPT..." : "Export .PPTX"}
+                    </span>
+                  </Button>
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -2145,6 +1777,7 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
                     <span className="font-semibold text-xs text-foreground">Study Guide</span>
                     <span className="text-[10px] text-muted-foreground">Topics outline</span>
                   </Button>
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -2155,6 +1788,18 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
                     <span className="font-semibold text-xs text-foreground">FAQ Doc</span>
                     <span className="text-[10px] text-muted-foreground">Common Q&A</span>
                   </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-auto py-2 px-2 flex flex-col items-start gap-1 text-left border bg-background hover:bg-muted"
+                    onClick={() => triggerStudioTool("summary")}
+                  >
+                    <FileSpreadsheet className="h-3.5 w-3.5 text-primary" />
+                    <span className="font-semibold text-xs text-foreground">Summary</span>
+                    <span className="text-[10px] text-muted-foreground">Key takeaways</span>
+                  </Button>
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -2308,7 +1953,7 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
             </div>
           ) : (
             /* Tab 2: Grounded Source Viewer / Inspector */
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col space-y-4">
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col space-y-4">
               {viewerContent ? (
                 <>
                   <div className="p-3 bg-muted/40 rounded-lg border space-y-2">
@@ -2376,6 +2021,180 @@ A: The system tolerates up to f Byzantine faults in a network of 3f + 1 nodes un
             </div>
           )}
         </aside>
+      )}
+
+      {/* ========================================================================= */}
+      {/* GOOGLE GEMINI NOTEBOOKLM: INTERACTIVE MIND MAP MODAL                       */}
+      {/* ========================================================================= */}
+      {isMindMapOpen && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
+          <div className="bg-card border border-border shadow-2xl rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b flex items-center justify-between bg-muted/30">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center border border-indigo-500/20">
+                  <Network className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                    <span>{mindMapData?.title || "Course Knowledge Mind Map"}</span>
+                    <Badge variant="outline" className="text-[10px] text-indigo-500 border-indigo-500/30 bg-indigo-500/5">
+                      Interactive Visual Graph
+                    </Badge>
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    Synthesized from your uploaded sources • Click any node to ask questions in chat
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs gap-1.5 cursor-pointer"
+                  onClick={() => {
+                    if (!mindMapData) return;
+                    const text = `# ${mindMapData.title}\n\n` +
+                      (mindMapData.nodes?.filter(n => n.level === 1) || []).map(b => {
+                        const subs = mindMapData.nodes?.filter(n => n.level === 2 && mindMapData.edges?.some(e => e.from === b.id && e.to === n.id)) || [];
+                        return `## ${b.label}\n` + subs.map(s => `- ${s.label}`).join("\n");
+                      }).join("\n\n");
+                    const blob = new Blob([text], { type: "text/markdown" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `MindMap_${mindMapData.title.replace(/\s+/g, "_")}.md`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export .MD
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-lg cursor-pointer"
+                  onClick={() => setIsMindMapOpen(false)}
+                >
+                  ✕
+                </Button>
+              </div>
+            </div>
+
+            {/* Modal Body / Visual Graph Canvas */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gradient-to-b from-background via-card to-background">
+              {isLoadingMindMap ? (
+                <div className="flex flex-col items-center justify-center py-20 space-y-3">
+                  <Loader2 className="h-8 w-8 text-indigo-500 animate-spin" />
+                  <p className="text-sm font-semibold text-foreground">
+                    Synthesizing knowledge hierarchy from your course chunks...
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Discovering central themes, core relationships, and subtopic clusters
+                  </p>
+                </div>
+              ) : mindMapData ? (
+                <div className="space-y-8">
+                  {/* Root Node */}
+                  <div className="flex flex-col items-center">
+                    <div className="px-6 py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-primary text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/30 flex items-center gap-2.5 animate-in zoom-in-95 duration-300">
+                      <Sparkles className="h-5 w-5 text-indigo-200" />
+                      <span className="font-bold text-sm sm:text-base tracking-wide">
+                        {mindMapData.title}
+                      </span>
+                    </div>
+                    {/* Downward Connector Line */}
+                    <div className="w-0.5 h-8 bg-gradient-to-b from-indigo-500 to-border" />
+                  </div>
+
+                  {/* Level 1 & Level 2 Branches Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {mindMapData.nodes
+                      ?.filter(n => n.level === 1)
+                      .map((branch, bIdx) => {
+                        const childNodes = mindMapData.nodes?.filter(
+                          n => n.level === 2 && mindMapData.edges?.some(e => e.from === branch.id && e.to === n.id)
+                        ) || [];
+
+                        return (
+                          <div
+                            key={branch.id}
+                            className="flex flex-col rounded-xl border bg-card/80 backdrop-blur p-4 shadow-xs hover:shadow-md hover:border-primary/40 transition-all space-y-3"
+                            style={{ borderTopWidth: 4, borderTopColor: branch.color || "#6366f1" }}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span
+                                className="font-bold text-xs uppercase tracking-wider"
+                                style={{ color: branch.color || "#6366f1" }}
+                              >
+                                Branch {bIdx + 1}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-1.5 text-[10px] text-muted-foreground hover:text-primary gap-1 cursor-pointer"
+                                onClick={() => {
+                                  setIsMindMapOpen(false);
+                                  sendMessage(false, `Can you give me an in-depth explanation of "${branch.label}" with real examples from our uploaded materials?`);
+                                }}
+                              >
+                                <MessageSquareQuote className="h-3 w-3" />
+                                Ask Tutor
+                              </Button>
+                            </div>
+
+                            <h3 className="font-bold text-sm text-foreground leading-snug">
+                              {branch.label}
+                            </h3>
+
+                            {/* Subtopics List */}
+                            <div className="space-y-1.5 pt-1">
+                              <span className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider">
+                                Subtopics & Concepts ({childNodes.length})
+                              </span>
+                              <div className="flex flex-col gap-1.5">
+                                {childNodes.map(sub => (
+                                  <button
+                                    key={sub.id}
+                                    onClick={() => {
+                                      setIsMindMapOpen(false);
+                                      sendMessage(false, `Explain "${sub.label}" in the context of ${branch.label} from our course notes.`);
+                                    }}
+                                    className="group text-left px-2.5 py-1.5 rounded-lg bg-muted/40 hover:bg-primary/10 hover:border-primary/30 border border-transparent text-xs text-foreground/90 transition-all flex items-center justify-between cursor-pointer"
+                                  >
+                                    <span className="truncate pr-1">• {sub.label}</span>
+                                    <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 text-primary transition-opacity shrink-0" />
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              ) : (
+                <div className="py-12 text-center text-xs text-muted-foreground">
+                  No mind map data available. Click Generate to build one.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3 border-t bg-muted/20 flex items-center justify-between text-xs text-muted-foreground">
+              <span>💡 Tip: Click any subtopic pill to trigger instant grounded explanations in the tutor chat.</span>
+              <Button
+                variant="default"
+                size="sm"
+                className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
+                onClick={() => setIsMindMapOpen(false)}
+              >
+                Close Mind Map
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -32,7 +32,7 @@ def hybrid_search(db: Session, query: str, course_id: int, topic_id: Optional[in
     
     vector_sql += f" ORDER BY vector_score DESC LIMIT {top_k * 2}"
     
-    # 2. Keyword Search
+    # 2. Keyword Search (tsvector + ILIKE token fallback)
     keyword_sql = """
         SELECT c.id, ts_rank(to_tsvector('english', c.text), plainto_tsquery('english', :query)) AS text_score
         FROM chunks c
@@ -62,6 +62,50 @@ def hybrid_search(db: Session, query: str, course_id: int, topic_id: Optional[in
         logger.warning(f"Keyword search failed: {e}. Rolling back sub-transaction.")
         db.rollback()
         keyword_results = []
+        
+    # 3. Enhanced keyword & stem matching (handles hyphenated terms, plurals, and -ing variations)
+    import re
+    raw_words = re.findall(r'[a-zA-Z0-9]+', query.lower())
+    stopwords = {'what', 'when', 'where', 'which', 'who', 'whom', 'this', 'that', 'with', 'from', 'have', 'does', 'been', 'were', 'about', 'tell', 'show', 'give', 'explain', 'describe'}
+    words = [w for w in raw_words if len(w) > 2 and w not in stopwords]
+    
+    stemmed = set(words)
+    for w in list(words):
+        if w.endswith('fitting') and len(w) > 7:
+            stemmed.add(w.replace('fitting', '-fit'))
+            stemmed.add(w.replace('fitting', 'fit'))
+            stemmed.add(w.replace('fitting', ''))
+        elif w.endswith('ing') and len(w) > 5:
+            stemmed.add(w[:-3])
+            stemmed.add(w[:-4])
+        elif w.endswith('ed') and len(w) > 4:
+            stemmed.add(w[:-2])
+            stemmed.add(w[:-1])
+        elif w.endswith('s') and len(w) > 4:
+            stemmed.add(w[:-1])
+            
+    valid_stems = [s for s in stemmed if len(s) > 2]
+    if valid_stems:
+        ilike_conditions = " OR ".join([f"c.text ILIKE :t_{i}" for i in range(len(valid_stems))])
+        ilike_sql = f"""
+            SELECT c.id, 1.0 AS text_score
+            FROM chunks c
+            JOIN sources s ON c.source_id = s.id
+            WHERE s.course_id = :course_id AND ({ilike_conditions})
+        """
+        ilike_params = {"course_id": course_id}
+        if source_id:
+            ilike_sql += " AND c.source_id = :source_id"
+            ilike_params["source_id"] = source_id
+        for i, tok in enumerate(valid_stems):
+            ilike_params[f"t_{i}"] = f"%{tok}%"
+        ilike_sql += f" LIMIT {top_k * 2}"
+        try:
+            stem_results = db.execute(text(ilike_sql), ilike_params).fetchall()
+            keyword_results.extend(stem_results)
+        except Exception as e:
+            logger.warning(f"Stem keyword search failed: {e}")
+            db.rollback()
     
     # RRF (Reciprocal Rank Fusion)
     rrf_k = 60
@@ -78,7 +122,7 @@ def hybrid_search(db: Session, query: str, course_id: int, topic_id: Optional[in
     sorted_chunk_ids = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)[:top_k]
     
     if not sorted_chunk_ids:
-        # Fallback: if keyword & vector yielded nothing, return up to top_k chunks from the source/course
+        # Fallback: return up to top_k chunks from the source/course
         fallback_query = db.query(models.Chunk).join(models.Source).filter(models.Source.course_id == course_id)
         if source_id:
             fallback_query = fallback_query.filter(models.Chunk.source_id == source_id)
@@ -89,3 +133,4 @@ def hybrid_search(db: Session, query: str, course_id: int, topic_id: Optional[in
     chunk_map = {c.id: c for c in chunks}
     
     return [chunk_map[cid] for cid in sorted_chunk_ids if cid in chunk_map]
+

@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base
 import models
-from app.routers import courses, ingestion, chat, quiz, learner, insights
+from app.routers import courses, ingestion, chat, quiz, learner, insights, notebook
 
 import logging
 
@@ -43,6 +43,7 @@ app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(quiz.router, prefix="/api", tags=["quiz"])
 app.include_router(learner.router, prefix="/api", tags=["learner"])
 app.include_router(insights.router, prefix="/api", tags=["insights"])
+app.include_router(notebook.router, prefix="/api", tags=["notebook"])
 
 @app.get("/")
 def read_root():

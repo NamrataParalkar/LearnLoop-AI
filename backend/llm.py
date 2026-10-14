@@ -14,7 +14,7 @@ if settings.gemini_api_key and settings.gemini_api_key.strip():
     except Exception as e:
         logger.warning(f"Could not initialize Gemini Client: {e}")
 
-FALLBACK_MODELS = ["gemini-3.8-flash", "gemini-3.1-pro-preview"]
+FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash"]
 
 def generate_structured(prompt: str, schema: dict, model_name: str = None) -> dict:
     """Generate structured JSON output from Gemini with retry logic and fallback models."""

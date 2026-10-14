@@ -23,15 +23,36 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
     email = Column(String, unique=True, index=True)
+    role = Column(String, default="student", index=True) # "student", "teacher", "admin"
+    avatar = Column(String, nullable=True)
+
+    courses_taught = relationship("Course", back_populates="teacher")
 
 class Course(Base):
     __tablename__ = "courses"
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True)
+    short_summary = Column(String(300), nullable=True)
     description = Column(Text)
+    teacher_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    category = Column(String, default="Computer Science", index=True)
+    level = Column(String, default="Intermediate", index=True) # Beginner, Intermediate, Advanced
+    status = Column(String, default="published", index=True) # draft, published, archived
+    is_published = Column(Boolean, default=True, index=True)
+    prerequisites = Column(JSON, nullable=True) # list of prerequisite strings or concept names
+    learning_objectives = Column(JSON, nullable=True) # list of objective strings
+    thumbnail = Column(String, nullable=True)
+    estimated_duration_hours = Column(Float, default=10.0)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     
-    sources = relationship("Source", back_populates="course")
-    topics = relationship("Topic", back_populates="course")
+    teacher = relationship("User", back_populates="courses_taught")
+    sources = relationship("Source", back_populates="course", cascade="all, delete-orphan")
+    topics = relationship("Topic", back_populates="course", cascade="all, delete-orphan")
+    modules = relationship("CourseModule", back_populates="course", cascade="all, delete-orphan", order_by="CourseModule.display_order")
+    enrollments = relationship("Enrollment", back_populates="course", cascade="all, delete-orphan")
+    reviews = relationship("CourseReview", back_populates="course", cascade="all, delete-orphan")
+    certificates = relationship("Certificate", back_populates="course", cascade="all, delete-orphan")
 
 class Source(Base):
     __tablename__ = "sources"
@@ -221,4 +242,108 @@ class ChatMessage(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     
     session = relationship("ChatSession", back_populates="messages")
+
+
+# ==============================================================================
+# Production Course Management, Curriculum & Student Enrollment Models
+# ==============================================================================
+
+class CourseModule(Base):
+    __tablename__ = "course_modules"
+    id = Column(Integer, primary_key=True, index=True)
+    course_id = Column(Integer, ForeignKey("courses.id", ondelete="CASCADE"), index=True, nullable=False)
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    display_order = Column(Integer, default=0, index=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    course = relationship("Course", back_populates="modules")
+    lessons = relationship("Lesson", back_populates="module", cascade="all, delete-orphan", order_by="Lesson.display_order")
+
+
+class Lesson(Base):
+    __tablename__ = "lessons"
+    id = Column(Integer, primary_key=True, index=True)
+    module_id = Column(Integer, ForeignKey("course_modules.id", ondelete="CASCADE"), index=True, nullable=False)
+    course_id = Column(Integer, ForeignKey("courses.id", ondelete="CASCADE"), index=True, nullable=False)
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=True)
+    content_text = Column(Text, nullable=True) # Markdown / text explanation
+    video_url = Column(String(500), nullable=True) # YouTube/MP4 URL
+    resource_url = Column(String(500), nullable=True) # PDF/Document attachment path/url
+    duration_minutes = Column(Integer, default=15)
+    display_order = Column(Integer, default=0, index=True)
+    is_preview = Column(Boolean, default=False) # Free preview lesson
+    is_published = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    module = relationship("CourseModule", back_populates="lessons")
+    progress_records = relationship("LessonProgress", back_populates="lesson", cascade="all, delete-orphan")
+
+
+class Enrollment(Base):
+    __tablename__ = "enrollments"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    course_id = Column(Integer, ForeignKey("courses.id", ondelete="CASCADE"), index=True, nullable=False)
+    status = Column(String(50), default="active", index=True) # active, completed, dropped
+    enrolled_at = Column(DateTime, default=datetime.datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    last_accessed_at = Column(DateTime, default=datetime.datetime.utcnow)
+    last_lesson_id = Column(Integer, ForeignKey("lessons.id", ondelete="SET NULL"), nullable=True)
+
+    user = relationship("User")
+    course = relationship("Course", back_populates="enrollments")
+    last_lesson = relationship("Lesson")
+    progress_records = relationship("LessonProgress", back_populates="enrollment", cascade="all, delete-orphan")
+    certificate = relationship("Certificate", back_populates="enrollment", uselist=False, cascade="all, delete-orphan")
+
+
+class LessonProgress(Base):
+    __tablename__ = "lesson_progress"
+    id = Column(Integer, primary_key=True, index=True)
+    enrollment_id = Column(Integer, ForeignKey("enrollments.id", ondelete="CASCADE"), index=True, nullable=False)
+    lesson_id = Column(Integer, ForeignKey("lessons.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    is_completed = Column(Boolean, default=False, index=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    enrollment = relationship("Enrollment", back_populates="progress_records")
+    lesson = relationship("Lesson", back_populates="progress_records")
+
+
+class CourseReview(Base):
+    __tablename__ = "course_reviews"
+    id = Column(Integer, primary_key=True, index=True)
+    course_id = Column(Integer, ForeignKey("courses.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    rating = Column(Integer, nullable=False) # 1 to 5
+    comment = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    course = relationship("Course", back_populates="reviews")
+    user = relationship("User")
+
+
+class Certificate(Base):
+    __tablename__ = "certificates"
+    id = Column(Integer, primary_key=True, index=True)
+    certificate_code = Column(String(100), unique=True, index=True, nullable=False)
+    enrollment_id = Column(Integer, ForeignKey("enrollments.id", ondelete="CASCADE"), index=True, nullable=False)
+    course_id = Column(Integer, ForeignKey("courses.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    student_name = Column(String(200), nullable=False)
+    course_title = Column(String(200), nullable=False)
+    teacher_name = Column(String(200), nullable=True)
+    issued_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    enrollment = relationship("Enrollment", back_populates="certificate")
+    course = relationship("Course", back_populates="certificates")
+    user = relationship("User")
+
 
