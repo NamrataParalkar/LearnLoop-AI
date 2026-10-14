@@ -1561,7 +1561,13 @@ def get_hierarchy(course_id: int, db: Session = Depends(get_db)):
                     "id": c.id,
                     "name": c.name,
                     "chunk_count": len(chunks),
-                    "chunks": [{"id": ch.id, "text": ch.text[:100], "source_id": ch.source_id, "type": ch.chunk_type, "loc": ch.page or ch.start_sec} for ch in chunks]
+                    "chunks": [{
+                        "id": ch.id, 
+                        "text": ch.text[:120] if ch.text else "", 
+                        "source_id": ch.source_id, 
+                        "type": ch.chunk_type, 
+                        "loc": f"Page {ch.page}" if ch.page is not None else (f"Slide {ch.slide_no}" if ch.slide_no is not None else (f"{int(ch.start_sec)}s" if ch.start_sec is not None else "N/A"))
+                    } for ch in chunks]
                 })
             subtopics_data.append({
                 "id": st.id,

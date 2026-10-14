@@ -992,6 +992,22 @@ function CurriculumHierarchyView({ courseId, activeCourse }: { courseId: number;
       .then(res => res.json())
       .then(d => {
         setData(d);
+        if (d?.tree && d.tree.length > 0) {
+          const expT: Record<number, boolean> = {};
+          const expSt: Record<number, boolean> = {};
+          d.tree.forEach((t: any) => {
+            expT[t.id] = true;
+            t.subtopics?.forEach((st: any) => {
+              expSt[st.id] = true;
+            });
+          });
+          setExpandedTopics(expT);
+          setExpandedSubtopics(expSt);
+          const firstConcept = d.tree[0]?.subtopics?.[0]?.concepts?.[0];
+          if (firstConcept) {
+            setSelectedConcept(firstConcept);
+          }
+        }
         setLoading(false);
       })
       .catch(err => {
@@ -1204,7 +1220,7 @@ function CurriculumHierarchyView({ courseId, activeCourse }: { courseId: number;
                         {chunk.type === 'text' && <FileText className="w-3 h-3 text-blue-500" />}
                         {chunk.type === 'figure' && <FileImage className="w-3 h-3 text-purple-500" />}
                         {chunk.type === 'transcript' && <FileAudio className="w-3 h-3 text-amber-500" />}
-                        Source {chunk.source_id} {chunk.loc ? `(Loc: ${chunk.loc})` : ''}
+                        Source {chunk.source_id} {chunk.loc ? `• ${chunk.loc}` : ''}
                       </Badge>
                       <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-muted-foreground" onClick={() => setSelectedChunk(chunk)}>
                         Full Text
