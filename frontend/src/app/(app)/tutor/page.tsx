@@ -48,7 +48,11 @@ import {
   PlaySquare,
   Volume2,
   VolumeX,
-  Mic
+  Mic,
+  Network,
+  Presentation,
+  Loader2,
+  Share2
 } from "lucide-react";
 import { API_BASE_URL, getApiUrl } from "@/lib/config";
 
@@ -94,11 +98,33 @@ interface StudyNote {
   timestamp: string;
 }
 
+interface MindMapNode {
+  id: string;
+  label: string;
+  level: number;
+  color?: string;
+}
+
+interface MindMapData {
+  title: string;
+  nodes: MindMapNode[];
+  edges: Array<{ from: string; to: string }>;
+  branches_count?: number;
+}
+
 export default function GeminiNotebookTutor() {
   const { currentUser } = useUser();
   const [courseId, setCourseId] = useState<number>(1);
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [sessions, setSessions] = useState<{ id: number; title: string }[]>([]);
+
+  // Notebook Mind Map State
+  const [isMindMapOpen, setIsMindMapOpen] = useState(false);
+  const [isLoadingMindMap, setIsLoadingMindMap] = useState(false);
+  const [mindMapData, setMindMapData] = useState<MindMapData | null>(null);
+
+  // Presentation (.PPTX) State
+  const [isGeneratingPPT, setIsGeneratingPPT] = useState(false);
 
   // Notebook Sources (Left Panel)
   const [sources, setSources] = useState<SourceItem[]>([]);
@@ -735,6 +761,98 @@ export default function GeminiNotebookTutor() {
     sendMessage(false, prompt);
   };
 
+  // Google Gemini NotebookLM: Mind Map Generation
+  const handleGenerateMindMap = async () => {
+    setIsLoadingMindMap(true);
+    setIsMindMapOpen(true);
+    try {
+      const res = await fetch(getApiUrl("/api/notebook/mindmap"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          course_id: courseId,
+          source_ids: selectedSourceIds.length > 0 ? selectedSourceIds : undefined,
+          topic: "Course Knowledge Graph"
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMindMapData(data);
+        showToast("Interactive Mind Map generated from your course materials!", "success");
+
+        // Also save structured summary as a Studio Note
+        const branches = data.nodes?.filter((n: any) => n.level === 1) || [];
+        const outlineText = branches.map((b: any, idx: number) => {
+          const subs = data.nodes?.filter((n: any) => n.level === 2 && data.edges?.some((e: any) => e.from === b.id && e.to === n.id)) || [];
+          return `${idx + 1}. ${b.label}\n` + subs.map((s: any) => `   • ${s.label}`).join("\n");
+        }).join("\n\n");
+
+        const mindMapNote: StudyNote = {
+          id: `note-${Date.now()}`,
+          title: `Mind Map: ${data.title || "Course Concepts"}`,
+          type: "guide",
+          content: outlineText || "Visual knowledge hierarchy synthesized from verified course materials.",
+          timestamp: "Generated just now"
+        };
+        setNotes(prev => [mindMapNote, ...prev]);
+      } else {
+        showToast("Could not generate mind map. Please check connection.", "warning");
+      }
+    } catch (err) {
+      console.error("Mind map error", err);
+      showToast("Network error generating mind map.", "warning");
+    } finally {
+      setIsLoadingMindMap(false);
+    }
+  };
+
+  // Google Gemini NotebookLM: 16:9 Slide Deck (.PPTX) Generation
+  const handleGeneratePPT = async () => {
+    setIsGeneratingPPT(true);
+    showToast("Synthesizing 16:9 widescreen presentation deck with python-pptx...", "info");
+    try {
+      const res = await fetch(getApiUrl("/api/notebook/generate-presentation"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          course_id: courseId,
+          source_ids: selectedSourceIds.length > 0 ? selectedSourceIds : undefined,
+          title: "Course Study Presentation"
+        })
+      });
+
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `LearnLoop_Presentation_Course_${courseId}.pptx`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        showToast("Presentation deck (.pptx) downloaded successfully!", "success");
+
+        const pptNote: StudyNote = {
+          id: `note-${Date.now()}`,
+          title: "Presentation Slides (.PPTX)",
+          type: "summary",
+          content: "Downloaded 16:9 widescreen presentation deck based on verified course materials with title slide, concept deep dives, and key conclusions.",
+          timestamp: "Downloaded just now"
+        };
+        setNotes(prev => [pptNote, ...prev]);
+      } else {
+        showToast("Could not generate presentation deck. Please check backend.", "warning");
+      }
+    } catch (err) {
+      console.error("PPT generation error", err);
+      showToast("Connection error while generating presentation.", "warning");
+    } finally {
+      setIsGeneratingPPT(false);
+    }
+  };
+
   // Convert an assistant response into a persistent Studio Note
   const saveResponseToNotes = (msg: MessageItem) => {
     const newNote: StudyNote = {
@@ -1193,38 +1311,37 @@ export default function GeminiNotebookTutor() {
                 <Compass className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-foreground">Grounded Notebook Chat</h3>
+                <h3 className="text-lg font-bold text-foreground">Your Personal Study Companion</h3>
                 <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
-                  Every answer is strictly anchored in your uploaded course materials with
-                  interactive slide, page, and video citations.
+                  I&apos;ve read through your uploaded lecture slides, notes, and videos. Ask me anything, or use the study tools on the right to build a mind map, study guide, or presentation deck.
                 </p>
               </div>
 
               {/* Starter Query Chips */}
               <div className="flex flex-wrap gap-2 justify-center pt-2">
                 <button
-                  onClick={() => sendMessage(false, "Explain the core concepts covered in the attached materials.")}
-                  className="px-3 py-1.5 rounded-full bg-secondary hover:bg-secondary/80 border text-xs font-medium text-foreground transition-colors"
+                  onClick={() => sendMessage(false, "Can you give me a friendly overview of the key concepts covered in our materials?")}
+                  className="px-3 py-1.5 rounded-full bg-secondary hover:bg-secondary/80 border text-xs font-medium text-foreground transition-colors cursor-pointer"
                 >
-                  📘 Summarize Core Concepts
+                  📘 Overview of Key Concepts
                 </button>
                 <button
-                  onClick={() => sendMessage(false, "What is Stratus and how does it decouple consensus?")}
-                  className="px-3 py-1.5 rounded-full bg-secondary hover:bg-secondary/80 border text-xs font-medium text-foreground transition-colors"
+                  onClick={() => sendMessage(false, "Explain Stratus and how it decouples consensus in simple terms.")}
+                  className="px-3 py-1.5 rounded-full bg-secondary hover:bg-secondary/80 border text-xs font-medium text-foreground transition-colors cursor-pointer"
                 >
-                  ⚡ What is Stratus?
+                  ⚡ Explain Stratus Simply
                 </button>
                 <button
-                  onClick={() => sendMessage(false, "What are the Byzantine fault tolerance bounds?")}
-                  className="px-3 py-1.5 rounded-full bg-secondary hover:bg-secondary/80 border text-xs font-medium text-foreground transition-colors"
+                  onClick={() => sendMessage(false, "What are the Byzantine fault tolerance bounds in our notes?")}
+                  className="px-3 py-1.5 rounded-full bg-secondary hover:bg-secondary/80 border text-xs font-medium text-foreground transition-colors cursor-pointer"
                 >
                   🛡️ BFT Tolerance Bounds
                 </button>
                 <button
                   onClick={() => sendMessage(false, "Explain quantum entanglement theory")}
-                  className="px-3 py-1.5 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-xs font-medium text-amber-600 dark:text-amber-400 transition-colors"
+                  className="px-3 py-1.5 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-xs font-medium text-amber-600 dark:text-amber-400 transition-colors cursor-pointer"
                 >
-                  🧪 Off-Material Query (Refusal Test)
+                  🧪 Test Non-Course Question
                 </button>
               </div>
             </div>
@@ -1246,24 +1363,24 @@ export default function GeminiNotebookTutor() {
                     <div className="space-y-3">
                       <div className="flex items-center gap-2 text-amber-500 font-semibold text-xs">
                         <AlertTriangle className="h-4 w-4" />
-                        <span>Source Grounding Refusal Gate</span>
+                        <span>Not Found in Your Notes</span>
                       </div>
                       <p className="text-xs text-foreground/90 leading-relaxed">{m.content}</p>
                       {m.coverage_note && (
                         <div className="text-[11px] bg-amber-500/10 text-amber-600 dark:text-amber-400 p-2 rounded border border-amber-500/20">
-                          <strong>Grounding Note:</strong> {m.coverage_note}
+                          <strong>Note from your materials:</strong> {m.coverage_note}
                         </div>
                       )}
                       <Button
                         size="sm"
                         variant="default"
-                        className="bg-amber-600 hover:bg-amber-700 text-white text-xs h-7"
+                        className="bg-amber-600 hover:bg-amber-700 text-white text-xs h-7 cursor-pointer"
                         onClick={() => {
                           const lastUser = messages[idx - 1]?.content || "";
                           sendMessage(true, lastUser);
                         }}
                       >
-                        Explain with Outside Knowledge
+                        Explain Using General Knowledge
                       </Button>
                     </div>
                   ) : (
@@ -1280,7 +1397,7 @@ export default function GeminiNotebookTutor() {
                             variant="outline"
                             className="text-[10px] text-amber-500 border-amber-500/30 bg-amber-500/5"
                           >
-                            Outside Knowledge (Unchecked)
+                            Explained Using General Knowledge
                           </Badge>
                         </div>
                       )}
@@ -1289,8 +1406,8 @@ export default function GeminiNotebookTutor() {
                       {m.citations && m.citations.length > 0 && (
                         <div className="mt-3 pt-3 border-t">
                           <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center justify-between">
-                            <span>Grounded Sources ({m.citations.length})</span>
-                            <span className="text-[9px] text-primary">Click to inspect</span>
+                            <span>Verified Citations ({m.citations.length})</span>
+                            <span className="text-[9px] text-primary">Click to inspect exact page</span>
                           </div>
                           <div className="flex flex-wrap gap-1.5">
                             {m.citations.map((c, cIdx) => (
@@ -1509,7 +1626,7 @@ export default function GeminiNotebookTutor() {
             <span>
               Searching {selectedSourceIds.length} of {sources.length} sources (Type @ to target a file)
             </span>
-            <span>Strict citation contract active</span>
+            <span>Grounded in your verified notes</span>
           </div>
         </div>
       </main>
@@ -1587,13 +1704,47 @@ export default function GeminiNotebookTutor() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-auto py-2 px-2 flex flex-col items-start gap-1 text-left border bg-background hover:bg-muted"
-                    onClick={() => triggerStudioTool("summary")}
+                    className="h-auto py-2 px-2 flex flex-col items-start gap-1 text-left border border-indigo-500/30 bg-indigo-500/5 hover:bg-indigo-500/10 transition-all shadow-2xs group cursor-pointer"
+                    onClick={handleGenerateMindMap}
+                    disabled={isLoadingMindMap}
                   >
-                    <FileSpreadsheet className="h-3.5 w-3.5 text-primary" />
-                    <span className="font-semibold text-xs text-foreground">Summary</span>
-                    <span className="text-[10px] text-muted-foreground">Key takeaways</span>
+                    <div className="flex items-center justify-between w-full">
+                      {isLoadingMindMap ? (
+                        <Loader2 className="h-3.5 w-3.5 text-indigo-500 animate-spin" />
+                      ) : (
+                        <Network className="h-3.5 w-3.5 text-indigo-500 group-hover:scale-110 transition-transform" />
+                      )}
+                      <Badge variant="secondary" className="text-[9px] h-3.5 px-1 bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-mono">
+                        Visual
+                      </Badge>
+                    </div>
+                    <span className="font-semibold text-xs text-foreground">Mind Map</span>
+                    <span className="text-[10px] text-muted-foreground">Concept hierarchy</span>
                   </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-auto py-2 px-2 flex flex-col items-start gap-1 text-left border border-orange-500/30 bg-orange-500/5 hover:bg-orange-500/10 transition-all shadow-2xs group cursor-pointer"
+                    onClick={handleGeneratePPT}
+                    disabled={isGeneratingPPT}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      {isGeneratingPPT ? (
+                        <Loader2 className="h-3.5 w-3.5 text-orange-500 animate-spin" />
+                      ) : (
+                        <Presentation className="h-3.5 w-3.5 text-orange-500 group-hover:scale-110 transition-transform" />
+                      )}
+                      <Badge variant="secondary" className="text-[9px] h-3.5 px-1 bg-orange-500/15 text-orange-600 dark:text-orange-400 font-mono">
+                        16:9 Deck
+                      </Badge>
+                    </div>
+                    <span className="font-semibold text-xs text-foreground">Slide Deck</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {isGeneratingPPT ? "Exporting PPT..." : "Export .PPTX"}
+                    </span>
+                  </Button>
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -1604,6 +1755,7 @@ export default function GeminiNotebookTutor() {
                     <span className="font-semibold text-xs text-foreground">Study Guide</span>
                     <span className="text-[10px] text-muted-foreground">Topics outline</span>
                   </Button>
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -1614,6 +1766,18 @@ export default function GeminiNotebookTutor() {
                     <span className="font-semibold text-xs text-foreground">FAQ Doc</span>
                     <span className="text-[10px] text-muted-foreground">Common Q&A</span>
                   </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-auto py-2 px-2 flex flex-col items-start gap-1 text-left border bg-background hover:bg-muted"
+                    onClick={() => triggerStudioTool("summary")}
+                  >
+                    <FileSpreadsheet className="h-3.5 w-3.5 text-primary" />
+                    <span className="font-semibold text-xs text-foreground">Summary</span>
+                    <span className="text-[10px] text-muted-foreground">Key takeaways</span>
+                  </Button>
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -1835,6 +1999,180 @@ export default function GeminiNotebookTutor() {
             </div>
           )}
         </aside>
+      )}
+
+      {/* ========================================================================= */}
+      {/* GOOGLE GEMINI NOTEBOOKLM: INTERACTIVE MIND MAP MODAL                       */}
+      {/* ========================================================================= */}
+      {isMindMapOpen && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
+          <div className="bg-card border border-border shadow-2xl rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b flex items-center justify-between bg-muted/30">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center border border-indigo-500/20">
+                  <Network className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+                    <span>{mindMapData?.title || "Course Knowledge Mind Map"}</span>
+                    <Badge variant="outline" className="text-[10px] text-indigo-500 border-indigo-500/30 bg-indigo-500/5">
+                      Interactive Visual Graph
+                    </Badge>
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    Synthesized from your uploaded sources • Click any node to ask questions in chat
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs gap-1.5 cursor-pointer"
+                  onClick={() => {
+                    if (!mindMapData) return;
+                    const text = `# ${mindMapData.title}\n\n` +
+                      (mindMapData.nodes?.filter(n => n.level === 1) || []).map(b => {
+                        const subs = mindMapData.nodes?.filter(n => n.level === 2 && mindMapData.edges?.some(e => e.from === b.id && e.to === n.id)) || [];
+                        return `## ${b.label}\n` + subs.map(s => `- ${s.label}`).join("\n");
+                      }).join("\n\n");
+                    const blob = new Blob([text], { type: "text/markdown" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `MindMap_${mindMapData.title.replace(/\s+/g, "_")}.md`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Export .MD
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 rounded-lg cursor-pointer"
+                  onClick={() => setIsMindMapOpen(false)}
+                >
+                  ✕
+                </Button>
+              </div>
+            </div>
+
+            {/* Modal Body / Visual Graph Canvas */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gradient-to-b from-background via-card to-background">
+              {isLoadingMindMap ? (
+                <div className="flex flex-col items-center justify-center py-20 space-y-3">
+                  <Loader2 className="h-8 w-8 text-indigo-500 animate-spin" />
+                  <p className="text-sm font-semibold text-foreground">
+                    Synthesizing knowledge hierarchy from your course chunks...
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Discovering central themes, core relationships, and subtopic clusters
+                  </p>
+                </div>
+              ) : mindMapData ? (
+                <div className="space-y-8">
+                  {/* Root Node */}
+                  <div className="flex flex-col items-center">
+                    <div className="px-6 py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-primary text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/30 flex items-center gap-2.5 animate-in zoom-in-95 duration-300">
+                      <Sparkles className="h-5 w-5 text-indigo-200" />
+                      <span className="font-bold text-sm sm:text-base tracking-wide">
+                        {mindMapData.title}
+                      </span>
+                    </div>
+                    {/* Downward Connector Line */}
+                    <div className="w-0.5 h-8 bg-gradient-to-b from-indigo-500 to-border" />
+                  </div>
+
+                  {/* Level 1 & Level 2 Branches Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {mindMapData.nodes
+                      ?.filter(n => n.level === 1)
+                      .map((branch, bIdx) => {
+                        const childNodes = mindMapData.nodes?.filter(
+                          n => n.level === 2 && mindMapData.edges?.some(e => e.from === branch.id && e.to === n.id)
+                        ) || [];
+
+                        return (
+                          <div
+                            key={branch.id}
+                            className="flex flex-col rounded-xl border bg-card/80 backdrop-blur p-4 shadow-xs hover:shadow-md hover:border-primary/40 transition-all space-y-3"
+                            style={{ borderTopWidth: 4, borderTopColor: branch.color || "#6366f1" }}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span
+                                className="font-bold text-xs uppercase tracking-wider"
+                                style={{ color: branch.color || "#6366f1" }}
+                              >
+                                Branch {bIdx + 1}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-1.5 text-[10px] text-muted-foreground hover:text-primary gap-1 cursor-pointer"
+                                onClick={() => {
+                                  setIsMindMapOpen(false);
+                                  sendMessage(false, `Can you give me an in-depth explanation of "${branch.label}" with real examples from our uploaded materials?`);
+                                }}
+                              >
+                                <MessageSquareQuote className="h-3 w-3" />
+                                Ask Tutor
+                              </Button>
+                            </div>
+
+                            <h3 className="font-bold text-sm text-foreground leading-snug">
+                              {branch.label}
+                            </h3>
+
+                            {/* Subtopics List */}
+                            <div className="space-y-1.5 pt-1">
+                              <span className="text-[10px] uppercase font-semibold text-muted-foreground tracking-wider">
+                                Subtopics & Concepts ({childNodes.length})
+                              </span>
+                              <div className="flex flex-col gap-1.5">
+                                {childNodes.map(sub => (
+                                  <button
+                                    key={sub.id}
+                                    onClick={() => {
+                                      setIsMindMapOpen(false);
+                                      sendMessage(false, `Explain "${sub.label}" in the context of ${branch.label} from our course notes.`);
+                                    }}
+                                    className="group text-left px-2.5 py-1.5 rounded-lg bg-muted/40 hover:bg-primary/10 hover:border-primary/30 border border-transparent text-xs text-foreground/90 transition-all flex items-center justify-between cursor-pointer"
+                                  >
+                                    <span className="truncate pr-1">• {sub.label}</span>
+                                    <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 text-primary transition-opacity shrink-0" />
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              ) : (
+                <div className="py-12 text-center text-xs text-muted-foreground">
+                  No mind map data available. Click Generate to build one.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3 border-t bg-muted/20 flex items-center justify-between text-xs text-muted-foreground">
+              <span>💡 Tip: Click any subtopic pill to trigger instant grounded explanations in the tutor chat.</span>
+              <Button
+                variant="default"
+                size="sm"
+                className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
+                onClick={() => setIsMindMapOpen(false)}
+              >
+                Close Mind Map
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
