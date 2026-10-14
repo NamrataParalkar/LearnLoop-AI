@@ -64,9 +64,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   )
 
   return (
-    <div className="flex min-h-screen flex-col md:flex-row bg-background">
+    <div className="flex h-screen max-h-screen flex-col md:flex-row bg-background overflow-hidden">
       {/* Mobile Header & Sidebar */}
-      <div className="md:hidden flex items-center justify-between border-b bg-card p-4">
+      <div className="md:hidden flex items-center justify-between border-b bg-card p-4 shrink-0">
         <h2 className="text-xl font-bold text-primary">LearnLoop AI</h2>
         <Sheet>
           <SheetTrigger className={buttonVariants({ variant: "outline", size: "icon" })} aria-label="Open navigation menu">
@@ -79,14 +79,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Desktop Sidebar */}
-      <div className="hidden md:flex w-64 flex-col border-r bg-card h-screen sticky top-0">
+      <div className="hidden md:flex w-64 flex-col border-r bg-card h-full shrink-0 select-none">
         <SidebarContent />
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
+      <div className="flex-1 flex flex-col h-full min-h-0 min-w-0 overflow-hidden">
         {/* Top bar */}
-        <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <header className="shrink-0 flex h-14 md:h-16 items-center gap-4 border-b bg-background/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <div className="flex flex-1 items-center gap-4">
             <Select value={course} onValueChange={(v: string | null) => v && setCourse(v)}>
               <SelectTrigger className="w-[200px]">
@@ -135,7 +135,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page Content */}
-        <main className={cn("flex-1 overflow-y-auto", pathname === "/tutor" ? "p-3 overflow-hidden h-[calc(100vh-4rem)]" : "p-6 md:p-8")}>
+        <main className={cn("flex-1 min-h-0 min-w-0", pathname === "/tutor" ? "p-3 overflow-hidden h-full" : "p-6 md:p-8 overflow-y-auto")}>
           {children}
         </main>
       </div>

@@ -927,7 +927,7 @@ export default function GeminiNotebookTutor() {
   );
 
   return (
-    <div className="flex h-full w-full bg-background rounded-xl border overflow-hidden shadow-xs relative">
+    <div className="flex h-full max-h-full w-full min-h-0 min-w-0 bg-background rounded-xl border overflow-hidden shadow-xs relative">
       {/* Human-Friendly Toast Notification Banner */}
       {toastMessage && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-3 duration-300 pointer-events-none">
@@ -971,7 +971,7 @@ export default function GeminiNotebookTutor() {
           </div>
         </div>
       ) : (
-        <aside className="w-64 xl:w-72 border-r bg-card flex flex-col shrink-0 select-none transition-all">
+        <aside className="w-64 xl:w-72 border-r bg-card flex flex-col h-full min-h-0 shrink-0 select-none overflow-hidden transition-all">
           {/* Source Deck Header */}
           <div className="p-3 border-b flex items-center justify-between bg-muted/20">
             <div className="flex items-center gap-2 min-w-0">
@@ -1102,7 +1102,7 @@ export default function GeminiNotebookTutor() {
         </div>
 
         {/* Source List */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+        <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1.5">
           {filteredSources.length === 0 ? (
             <div className="py-8 text-center text-xs text-muted-foreground">
               No matching sources found.
@@ -1176,7 +1176,7 @@ export default function GeminiNotebookTutor() {
         </div>
 
         {/* Chat Sessions list bottom tray */}
-        <div className="border-t p-2.5 bg-muted/20">
+        <div className="border-t p-2.5 bg-muted/20 shrink-0">
           <div className="flex items-center justify-between mb-1.5 px-1">
             <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
               Chat Sessions
@@ -1221,7 +1221,7 @@ export default function GeminiNotebookTutor() {
       {/* CENTER PANEL: CHAT & GROUNDED REASONING CANVAS                             */}
       {/* ========================================================================= */}
       <main
-        className="flex-1 flex flex-col min-w-0 bg-background relative overflow-hidden"
+        className="flex-1 flex flex-col h-full min-h-0 min-w-0 bg-background relative overflow-hidden"
         onDragOver={e => {
           e.preventDefault();
           setIsDragging(true);
@@ -1304,7 +1304,7 @@ export default function GeminiNotebookTutor() {
         </div>
 
         {/* Chat Message Scroll Area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-6">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center text-center max-w-lg mx-auto h-full py-12 space-y-4">
               <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary shadow-xs">
@@ -1527,7 +1527,7 @@ export default function GeminiNotebookTutor() {
         </div>
 
         {/* Input Bar */}
-        <div className="p-3 border-t bg-card/60 backdrop-blur relative">
+        <div className="p-3 border-t bg-card/60 backdrop-blur relative shrink-0">
           {/* Autocomplete Popup Menu for @filename and /commands */}
           {inputValue.includes("@") && (
             <div className="absolute bottom-full mb-2 left-3 right-3 max-h-48 overflow-y-auto bg-popover/95 backdrop-blur-md border rounded-xl shadow-xl p-1.5 z-50 text-xs">
@@ -1657,9 +1657,9 @@ export default function GeminiNotebookTutor() {
           </div>
         </div>
       ) : (
-        <aside className="w-80 border-l bg-card flex flex-col shrink-0 transition-all">
+        <aside className="w-80 border-l bg-card flex flex-col h-full min-h-0 shrink-0 overflow-hidden transition-all">
           {/* Tab Header: Studio vs Source Viewer */}
-          <div className="flex items-center border-b bg-muted/20 pr-1">
+          <div className="flex items-center border-b bg-muted/20 pr-1 shrink-0">
             <button
               onClick={() => setRightPanelTab("studio")}
               className={`flex-1 py-3 text-xs font-semibold flex items-center justify-center gap-1.5 border-b-2 transition-all ${
@@ -1695,7 +1695,7 @@ export default function GeminiNotebookTutor() {
 
           {/* Tab 1: Studio (NotebookLM Study Artifacts Generator) */}
           {rightPanelTab === "studio" ? (
-            <div className="flex-1 overflow-y-auto p-3.5 space-y-4">
+            <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-4">
               <div>
                 <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                   Quick Study Generators
@@ -1931,7 +1931,7 @@ export default function GeminiNotebookTutor() {
             </div>
           ) : (
             /* Tab 2: Grounded Source Viewer / Inspector */
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col space-y-4">
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col space-y-4">
               {viewerContent ? (
                 <>
                   <div className="p-3 bg-muted/40 rounded-lg border space-y-2">
