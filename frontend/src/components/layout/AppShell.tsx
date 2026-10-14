@@ -20,20 +20,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { useUser, DEMO_USERS } from "@/context/UserContext"
-
-const navigation = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Tutor", href: "/tutor", icon: MessageSquare },
-  { name: "Practice", href: "/quiz", icon: GraduationCap },
-  { name: "Learning Path", href: "/learning-path", icon: Map },
-  { name: "Courses", href: "/courses", icon: BookOpen },
-]
+import { useCourse } from "@/context/CourseContext"
+import { Badge } from "@/components/ui/badge"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const { setTheme } = useTheme()
-  const [course, setCourse] = useState("1")
-  const { userId, setUserId, currentUser } = useUser()
+  const { selectedCourseId, setSelectedCourseId, courses } = useCourse()
+  const { userId, setUserId, currentUser, isTeacher } = useUser()
+
+  const navigation = [
+    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+    { name: "Courses", href: "/courses", icon: BookOpen },
+    { name: "Tutor", href: "/tutor", icon: MessageSquare },
+    { name: "Practice", href: "/quiz", icon: GraduationCap },
+    { name: "Learning Path", href: "/learning-path", icon: Map },
+  ]
 
   const SidebarContent = () => (
     <div className="flex h-full flex-col gap-4 py-4">
@@ -88,30 +90,65 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Top bar */}
         <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <div className="flex flex-1 items-center gap-4">
-            <Select value={course} onValueChange={(v: string | null) => v && setCourse(v)}>
-              <SelectTrigger className="w-[200px]">
+            <Select value={selectedCourseId} onValueChange={(v: string | null) => v && setSelectedCourseId(v)}>
+              <SelectTrigger className="w-[230px] border-border/80 bg-muted/40 shadow-sm">
                 <SelectValue placeholder="Select Course" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="1">Intro to Algorithms</SelectItem>
-                <SelectItem value="2">Data Structures</SelectItem>
+                {courses.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    <div className="flex flex-col text-left py-0.5 max-w-[200px]">
+                      <span className="truncate font-medium text-xs text-foreground">{c.title}</span>
+                      <span className="text-[10px] text-muted-foreground">{c.category} • {c.level}</span>
+                    </div>
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            {isTeacher && (
+              <Badge variant="outline" className="hidden sm:inline-flex bg-amber-500/10 text-amber-500 border-amber-500/30 text-[11px] font-semibold px-2 py-0.5">
+                Instructor Mode
+              </Badge>
+            )}
+
             <Select value={userId} onValueChange={(v: string | null) => v && setUserId(v)}>
-              <SelectTrigger className="w-[190px] bg-muted/50 border border-border" aria-label="Select Demo User">
+              <SelectTrigger className="w-[210px] bg-muted/50 border border-border" aria-label="Select User">
                 <div className="flex items-center gap-2 truncate">
                   <User className="h-4 w-4 text-primary shrink-0" />
-                  <span className="truncate font-medium text-xs">{currentUser?.name || "Select Student"}</span>
+                  <div className="flex flex-col text-left truncate">
+                    <span className="truncate font-medium text-xs">{currentUser?.name || "Select User"}</span>
+                  </div>
+                  <Badge variant="secondary" className="ml-auto text-[9px] px-1 py-0 h-4 uppercase font-bold shrink-0">
+                    {currentUser?.role}
+                  </Badge>
                 </div>
               </SelectTrigger>
               <SelectContent align="end">
-                {DEMO_USERS.map((u) => (
+                <div className="px-2 py-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                  Students
+                </div>
+                {DEMO_USERS.filter(u => u.role === "student").map((u) => (
                   <SelectItem key={u.id} value={u.id}>
                     <div className="flex flex-col text-left py-0.5">
                       <span className="font-medium text-xs text-foreground">{u.name}</span>
+                      <span className="text-[10px] text-muted-foreground">{u.subtitle}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+                
+                <div className="border-t my-1" />
+                <div className="px-2 py-1.5 text-[10px] font-bold text-amber-500/90 uppercase tracking-wider">
+                  Teachers & Faculty
+                </div>
+                {DEMO_USERS.filter(u => u.role === "teacher").map((u) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    <div className="flex flex-col text-left py-0.5">
+                      <span className="font-medium text-xs text-foreground flex items-center gap-1.5">
+                        {u.name}
+                      </span>
                       <span className="text-[10px] text-muted-foreground">{u.subtitle}</span>
                     </div>
                   </SelectItem>
