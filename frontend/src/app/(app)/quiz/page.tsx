@@ -16,6 +16,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { getApiUrl } from "@/lib/config";
+import { useUser } from "@/context/UserContext";
+
 const DEFAULT_FALLBACK_QUESTIONS = [
   {
     id: 101,
