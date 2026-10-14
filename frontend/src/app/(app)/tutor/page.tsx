@@ -112,9 +112,26 @@ interface MindMapData {
   branches_count?: number;
 }
 
+const normalizeTutorStyle = (rawStyle?: string | null): string => {
+  if (!rawStyle) return "Standard";
+  const s = rawStyle.toLowerCase().replace(/_/g, " ").trim();
+  if (s.includes("analogy")) return "Analogy";
+  if (s.includes("socratic")) return "Socratic";
+  if (s.includes("first") || s.includes("principle")) return "First Principles";
+  if (s.includes("story") || s.includes("narrative")) return "Story";
+  return "Standard";
+};
+
 export default function GeminiNotebookTutor() {
   const { currentUser } = useUser();
-  const [courseId, setCourseId] = useState<number>(1);
+  const [courseId, setCourseId] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search);
+      const c = p.get("course_id");
+      if (c && !isNaN(parseInt(c))) return parseInt(c);
+    }
+    return 1;
+  });
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [sessions, setSessions] = useState<{ id: number; title: string }[]>([]);
 
@@ -139,7 +156,14 @@ export default function GeminiNotebookTutor() {
   const [isDragging, setIsDragging] = useState(false);
 
   // Tutor controls
-  const [style, setStyle] = useState("Standard");
+  const [style, setStyle] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search);
+      const s = p.get("style");
+      if (s) return normalizeTutorStyle(s);
+    }
+    return "Standard";
+  });
   const [language, setLanguage] = useState("English");
   const [showDebug, setShowDebug] = useState(false);
 
@@ -232,27 +256,7 @@ export default function GeminiNotebookTutor() {
     scrollToBottom();
   }, [messages, isTyping]);
 
-  // Deep integration: Pre-fill concept, course, style, and prompt from Learning Path navigation
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const cid = params.get("course_id");
-    if (cid) {
-      const pCid = parseInt(cid);
-      if (!isNaN(pCid)) setCourseId(pCid);
-    }
-    const styleParam = params.get("style");
-    if (styleParam) {
-      setStyle(styleParam);
-    }
-    const promptParam = params.get("prompt");
-    const conceptParam = params.get("concept");
-    if (promptParam) {
-      setInputValue(promptParam);
-    } else if (conceptParam) {
-      setInputValue(`Explain ${conceptParam} with source citations from the course material.`);
-    }
-  }, []);
+
 
   // Load sources & sessions from backend + localStorage sync so they NEVER vanish on reload
   const fetchSources = async () => {
@@ -397,8 +401,9 @@ export default function GeminiNotebookTutor() {
     }
   }, [courseId, notes]);
 
-  // Check for auto-remediation / query params on mount
+  // Check for auto-remediation / deep links / query params on mount
   const hasAutoPromptedRef = useRef(false);
+  const isSendingRef = useRef(false);
 
   useEffect(() => {
     fetchSources();
@@ -406,17 +411,44 @@ export default function GeminiNotebookTutor() {
 
     if (typeof window !== "undefined" && !hasAutoPromptedRef.current) {
       const params = new URLSearchParams(window.location.search);
-      const queryParam = params.get("q") || params.get("remediate");
-      if (queryParam) {
+      const cid = params.get("course_id");
+      if (cid) {
+        const pCid = parseInt(cid);
+        if (!isNaN(pCid) && pCid !== courseId) {
+          setCourseId(pCid);
+        }
+      }
+
+      const styleParam = params.get("style");
+      const activeStyle = styleParam ? normalizeTutorStyle(styleParam) : style;
+      if (styleParam) {
+        setStyle(activeStyle);
+      }
+
+      const promptParam = params.get("prompt");
+      const qParam = params.get("q");
+      const remediateParam = params.get("remediate");
+      const conceptParam = params.get("concept");
+
+      let promptToSend = "";
+      if (promptParam) {
+        promptToSend = promptParam;
+      } else if (qParam) {
+        promptToSend = qParam;
+      } else if (remediateParam) {
+        promptToSend = `Can you explain the key concepts and resolve my misconceptions regarding: ${remediateParam}? Please ground your explanation in our course syllabus.`;
+      } else if (conceptParam) {
+        promptToSend = `Explain ${conceptParam} with source citations from the course material.`;
+      }
+
+      if (promptToSend.trim()) {
         hasAutoPromptedRef.current = true;
-        const promptToSend = params.get("q") 
-          ? queryParam 
-          : `Can you explain the key concepts and resolve my misconceptions regarding: ${queryParam}? Please ground your explanation in our course syllabus.`;
-        
+        setInputValue(promptToSend);
+
         // Auto-fill input and trigger sendMessage after a short delay to allow source loading
         setTimeout(() => {
-          sendMessage(false, promptToSend);
-        }, 500);
+          sendMessage(false, promptToSend, activeStyle);
+        }, 400);
       }
     }
   }, [courseId]);
@@ -604,13 +636,21 @@ export default function GeminiNotebookTutor() {
 
   // Chat message sender
   const sendMessage = async (isExternal = false, forcedText?: string, explicitStyle?: string) => {
+    if (isSendingRef.current) return;
     const textToSend = forcedText !== undefined ? forcedText : inputValue;
     if (!textToSend.trim()) return;
 
-    if (!forcedText) setInputValue("");
+    isSendingRef.current = true;
+    setInputValue("");
 
     const userMsgId = Date.now();
-    setMessages(prev => [...prev, { id: userMsgId, role: "user", content: textToSend }]);
+    setMessages(prev => {
+      const last = prev[prev.length - 1];
+      if (last && last.role === "user" && last.content.trim() === textToSend.trim()) {
+        return prev;
+      }
+      return [...prev, { id: userMsgId, role: "user", content: textToSend }];
+    });
     setIsTyping(true);
 
     try {
@@ -634,7 +674,6 @@ export default function GeminiNotebookTutor() {
       });
 
       const data = await res.json();
-      setIsTyping(false);
 
       if (res.ok) {
         if (data.session_id) {
@@ -705,7 +744,6 @@ export default function GeminiNotebookTutor() {
         ]);
       }
     } catch (err: any) {
-      setIsTyping(false);
       setMessages(prev => [
         ...prev,
         {
@@ -716,6 +754,9 @@ export default function GeminiNotebookTutor() {
           citations: []
         }
       ]);
+    } finally {
+      setIsTyping(false);
+      isSendingRef.current = false;
     }
   };
 
@@ -1630,6 +1671,7 @@ export default function GeminiNotebookTutor() {
               onKeyDown={e => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
+                  if (isTyping || isSendingRef.current || !inputValue.trim()) return;
                   sendMessage(false);
                 }
               }}
@@ -1638,7 +1680,10 @@ export default function GeminiNotebookTutor() {
               size="sm"
               variant="default"
               className="m-1.5 h-8 w-8 p-0 shrink-0"
-              onClick={() => sendMessage(false)}
+              onClick={() => {
+                if (isTyping || isSendingRef.current || !inputValue.trim()) return;
+                sendMessage(false);
+              }}
               disabled={!inputValue.trim() || isTyping}
             >
               <Send className="h-3.5 w-3.5" />

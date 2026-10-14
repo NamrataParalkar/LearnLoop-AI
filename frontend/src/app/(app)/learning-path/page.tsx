@@ -1403,47 +1403,56 @@ export default function LearningPathPage() {
                     )}
 
                     {/* AI Tutor Deep Link with Pedagogical Explanation Styles */}
-                    <div className="w-full space-y-1.5">
-                      <Link 
-                        href={`/tutor?course_id=${courseId}&concept=${encodeURIComponent(selectedNode.name)}&prompt=${encodeURIComponent(selectedNode.tutor_prompts.standard)}`}
-                        className="w-full block"
-                      >
-                        <Button variant="outline" size="sm" className="w-full gap-1.5 text-xs">
-                          <Sparkles className="h-3.5 w-3.5 text-primary" />
-                          Learn with AI Tutor
-                        </Button>
-                      </Link>
+                    {(() => {
+                      const stdPrompt = selectedNode.tutor_prompts?.standard || `Explain ${selectedNode.name} with source citations from the course material.`;
+                      const analogyPrompt = selectedNode.tutor_prompts?.analogy || `Explain ${selectedNode.name} using an intuitive real-world analogy.`;
+                      const principlesPrompt = selectedNode.tutor_prompts?.first_principles || `Explain ${selectedNode.name} starting from first principles and mathematical invariants.`;
+                      const socraticPrompt = selectedNode.tutor_prompts?.socratic || `Teach me ${selectedNode.name} through Socratic dialogue and guided inquiry questions.`;
 
-                      <div className="grid grid-cols-3 gap-1.5">
-                        <Link 
-                          href={`/tutor?course_id=${courseId}&concept=${encodeURIComponent(selectedNode.name)}&style=analogy&prompt=${encodeURIComponent(selectedNode.tutor_prompts.analogy)}`}
-                          title="Explain using an intuitive real-world analogy"
-                          className="w-full"
-                        >
-                          <Button variant="ghost" size="sm" className="w-full h-7 px-1 text-[10px] text-muted-foreground hover:text-foreground border border-border/50">
-                            💡 Analogy
-                          </Button>
-                        </Link>
-                        <Link 
-                          href={`/tutor?course_id=${courseId}&concept=${encodeURIComponent(selectedNode.name)}&style=first_principles&prompt=${encodeURIComponent(selectedNode.tutor_prompts.first_principles)}`}
-                          title="Explain starting from first principles and mathematical invariants"
-                          className="w-full"
-                        >
-                          <Button variant="ghost" size="sm" className="w-full h-7 px-1 text-[10px] text-muted-foreground hover:text-foreground border border-border/50">
-                            📐 Principles
-                          </Button>
-                        </Link>
-                        <Link 
-                          href={`/tutor?course_id=${courseId}&concept=${encodeURIComponent(selectedNode.name)}&style=socratic&prompt=${encodeURIComponent(selectedNode.tutor_prompts.socratic)}`}
-                          title="Teach through guided Socratic inquiry"
-                          className="w-full"
-                        >
-                          <Button variant="ghost" size="sm" className="w-full h-7 px-1 text-[10px] text-muted-foreground hover:text-foreground border border-border/50">
-                            🏛️ Socratic
-                          </Button>
-                        </Link>
-                      </div>
-                    </div>
+                      return (
+                        <div className="w-full space-y-1.5">
+                          <Link 
+                            href={`/tutor?course_id=${courseId}&concept=${encodeURIComponent(selectedNode.name)}&prompt=${encodeURIComponent(stdPrompt)}`}
+                            className="w-full block"
+                          >
+                            <Button variant="outline" size="sm" className="w-full gap-1.5 text-xs">
+                              <Sparkles className="h-3.5 w-3.5 text-primary" />
+                              Learn with AI Tutor
+                            </Button>
+                          </Link>
+
+                          <div className="grid grid-cols-3 gap-1.5">
+                            <Link 
+                              href={`/tutor?course_id=${courseId}&concept=${encodeURIComponent(selectedNode.name)}&style=analogy&prompt=${encodeURIComponent(analogyPrompt)}`}
+                              title="Explain using an intuitive real-world analogy"
+                              className="w-full"
+                            >
+                              <Button variant="ghost" size="sm" className="w-full h-7 px-1 text-[10px] text-muted-foreground hover:text-foreground border border-border/50">
+                                💡 Analogy
+                              </Button>
+                            </Link>
+                            <Link 
+                              href={`/tutor?course_id=${courseId}&concept=${encodeURIComponent(selectedNode.name)}&style=first_principles&prompt=${encodeURIComponent(principlesPrompt)}`}
+                              title="Explain starting from first principles and mathematical invariants"
+                              className="w-full"
+                            >
+                              <Button variant="ghost" size="sm" className="w-full h-7 px-1 text-[10px] text-muted-foreground hover:text-foreground border border-border/50">
+                                📐 Principles
+                              </Button>
+                            </Link>
+                            <Link 
+                              href={`/tutor?course_id=${courseId}&concept=${encodeURIComponent(selectedNode.name)}&style=socratic&prompt=${encodeURIComponent(socraticPrompt)}`}
+                              title="Teach through guided Socratic inquiry"
+                              className="w-full"
+                            >
+                              <Button variant="ghost" size="sm" className="w-full h-7 px-1 text-[10px] text-muted-foreground hover:text-foreground border border-border/50">
+                                🏛️ Socratic
+                              </Button>
+                            </Link>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                   </CardFooter>
                 </Card>
