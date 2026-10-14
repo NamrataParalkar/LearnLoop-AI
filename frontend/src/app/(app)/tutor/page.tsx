@@ -1517,7 +1517,7 @@ export default function GeminiNotebookTutor() {
                   style={{ animationDelay: "0.4s" }}
                 />
                 <span className="text-xs text-muted-foreground ml-2">
-                  Retrieving grounded chunks & reasoning...
+                  Thinking...
                 </span>
               </div>
             </div>

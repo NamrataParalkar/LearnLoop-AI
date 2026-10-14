@@ -76,7 +76,7 @@ def chat(
     clean_message = message
     
     # 1. Look for @filename or @"filename" or @file:id
-    file_tag_match = re.search(r'[@/](?:file[:=])?["\']?([^"\'\s,;?]+(?:\.[a-zA-Z0-9]+)?)["\']?', message)
+    file_tag_match = re.search(r'@(?:file[:=])?["\']?([^"\'\s,;?]+(?:\.[a-zA-Z0-9]+)?)["\']?', message)
     if file_tag_match:
         tag_text = file_tag_match.group(1).lower().strip()
         all_sources = db.query(models.Source).filter(models.Source.course_id == course_id).all()
@@ -89,15 +89,28 @@ def chat(
     source_id = matched_source_id
     
     # Check Special Case: Explain attached PPT / file or direct summary
-    is_summary = is_source_summary_request(message) or message.strip().startswith("/summary") or message.strip().startswith("/explain")
+    # Only route to full-source summary if it explicitly requests whole document/file summary or uses standalone /summary
+    stripped = message.strip()
+    is_summary = (
+        is_source_summary_request(message)
+        or stripped.lower() in ["/summary", "/summarize", "/explain ppt", "/explain slides", "/explain presentation", "/explain file"]
+        or (stripped.lower().startswith("/summary") and not any(k in stripped.lower() for k in ["why", "how", "what is", "difference", "compare", "between"]))
+    )
     
-    # 1. Query Rewriting (skip if direct summary command)
-    if is_summary:
-        rewritten_query = re.sub(r'^[/@]\w+\s*', '', message).strip() or message
-    else:
-        rewritten_query = rewrite_query(message, history_list)
+    # Clean command prefix (like /explain, /ask, /concept) so semantic search searches for the actual topic
+    clean_query = re.sub(r'^/(?:explain|ask|concept|q|detail|review)\s+', '', message, flags=re.IGNORECASE).strip()
+    if file_tag_match:
+        clean_query = clean_query.replace(file_tag_match.group(0), '').strip()
+    if not clean_query:
+        clean_query = message
         
-    logger.info(f"[CHAT] Original: '{message}' | Rewritten: '{rewritten_query}' | Bound source_id: {source_id} | Summary mode: {is_summary}")
+    # 1. Query Rewriting (skip if direct whole-source summary command)
+    if is_summary:
+        rewritten_query = clean_query
+    else:
+        rewritten_query = rewrite_query(clean_query, history_list)
+        
+    logger.info(f"[CHAT] Original: '{message}' | Clean Query: '{clean_query}' | Rewritten: '{rewritten_query}' | Bound source_id: {source_id} | Summary mode: {is_summary}")
     
     # 2. Retrieval
     if is_summary:
