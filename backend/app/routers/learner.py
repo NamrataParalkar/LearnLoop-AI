@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from database import get_db
-from models import User, LearnerProfile, Mastery, MasteryEvent, QuizSession, Attempt, Question, Topic, Concept, Prerequisite
+from models import User, LearnerProfile, Mastery, MasteryEvent, QuizSession, Attempt, Question, Topic, Concept, Prerequisite, Course
 from learner.graph import LearnerGraph
 from learner.recommend import next_best_action
+from app.routers.insights import get_user_misconceptions, get_confidence_insights
 from datetime import datetime, timedelta
 import math
 
@@ -400,9 +401,9 @@ def get_learning_path(user_id: int, course_id: int = 1, db: Session = Depends(ge
     concepts = query.all()
     
     if not concepts:
-        concepts = db.query(Concept).all()
+        return {"recommended_path": []}
         
-    graph = LearnerGraph(db, user_id)
+    graph = LearnerGraph(db, user_id, course_id=course_id)
     
     path_items = []
     for c in concepts:
@@ -457,64 +458,247 @@ def get_learning_path(user_id: int, course_id: int = 1, db: Session = Depends(ge
 
 @router.get("/{user_id}/learning-path-graph")
 def get_learning_path_graph(user_id: int, course_id: int = 1, db: Session = Depends(get_db)):
-    concepts = db.query(Concept).all()
-    prereqs = db.query(Prerequisite).all()
-    topics = {t.id: t.name for t in db.query(Topic).all()}
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User {user_id} not found")
+
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        course = db.query(Course).first()
+        if not course:
+            return {
+                "nodes": [],
+                "edges": [],
+                "user_id": user_id,
+                "user_name": user.name,
+                "course_id": course_id,
+                "course_title": "No courses found",
+                "summary": {
+                    "total_concepts": 0,
+                    "mastered_count": 0,
+                    "learning_count": 0,
+                    "available_count": 0,
+                    "locked_count": 0,
+                    "revision_due_count": 0,
+                    "overall_mastery": 0,
+                    "course_completion_pct": 0,
+                    "last_activity": None
+                },
+                "next_recommendation": None,
+                "knowledge_intelligence": {
+                    "bottlenecks": [],
+                    "forgetting_risk": [],
+                    "weak_concepts": [],
+                    "strong_concepts": [],
+                    "confidence_calibration": None,
+                    "active_misconceptions": [],
+                    "hierarchy_tree": []
+                }
+            }
+        course_id = course.id
+
+    all_course_topics = db.query(Topic).filter(Topic.course_id == course_id).all()
+    topic_map = {t.id: t for t in all_course_topics}
+    root_topics = {t.id: t for t in all_course_topics if t.parent_id is None}
     
-    graph = LearnerGraph(db, user_id)
-    
+    topic_ids = list(topic_map.keys())
+    concepts = db.query(Concept).filter(Concept.topic_id.in_(topic_ids)).all() if topic_ids else []
+    concept_map = {c.id: c for c in concepts}
+    concept_ids = set(concept_map.keys())
+
+    graph = LearnerGraph(db, user_id, course_id=course_id)
+    prereqs = [e for e in graph.edges if e.concept_id in concept_ids and e.requires_concept_id in concept_ids]
+
+    # Topological layering for deterministic, collision-free graph coordinates
+    layers = graph.get_topological_layers()
+    layer_counts = {}
+    for cid in concept_ids:
+        l = layers.get(cid, 0)
+        layer_counts.setdefault(l, []).append(cid)
+
+    # Sort within each layer by topic_id and concept name
+    coords = {}
+    for l, cids in layer_counts.items():
+        cids.sort(key=lambda x: (concept_map[x].topic_id or 0, concept_map[x].name))
+        for idx, cid in enumerate(cids):
+            coords[cid] = {
+                "layer": l,
+                "order_in_layer": idx,
+                "x": l * 340 + 70,
+                "y": idx * 220 + 80
+            }
+
+    user_masteries = {m.concept_id: m for m in db.query(Mastery).filter(Mastery.user_id == user_id).all()}
+    now = datetime.utcnow()
+
+    # Pre-fetch recent attempts for all course concepts by this user
+    user_attempts_by_cid = {}
+    attempts_query = db.query(Attempt, Question.concept_id).join(
+        Question, Attempt.question_id == Question.id
+    ).filter(
+        Attempt.user_id == user_id,
+        Question.course_id == course_id
+    ).order_by(Attempt.created_at.desc()).all()
+
+    for att, q_cid in attempts_query:
+        if q_cid:
+            user_attempts_by_cid.setdefault(q_cid, []).append(att)
+
+    # Misconceptions
+    user_misconceptions_res = get_user_misconceptions(user_id=user_id, course_id=course_id, db=db)
+    active_misconceptions_list = [m for m in user_misconceptions_res.get("misconceptions", []) if not m.get("is_resolved")]
+    misconceptions_by_cid = {}
+    for m_item in active_misconceptions_list:
+        misconceptions_by_cid.setdefault(m_item["concept_id"], []).append(m_item)
+
     nodes = []
     for c in concepts:
         eff_m = graph.get_effective_mastery(c.id)
         eff_pct = int(round(eff_m * 100))
-        raw_status = graph.get_status(c.id)
+        status = graph.get_status(c.id)
         is_ready = graph.is_prerequisite_ready(c.id, threshold=0.6)
-        
+
+        m = user_masteries.get(c.id)
+        p_known_pct = int(round(m.p_known * 100)) if m else int(round(eff_m * 100))
+        n_obs = m.n_observations if m else 0
+        stability = round(m.stability_days, 1) if m else 3.0
+
+        days_since_practice = None
+        retrievability_pct = 100
+        last_practiced_str = None
+        if m and m.last_practiced_at:
+            days_since_practice = max(0, (now - m.last_practiced_at).days)
+            r = math.exp(-days_since_practice / max(1.0, m.stability_days))
+            retrievability_pct = int(round(r * 100))
+            last_practiced_str = m.last_practiced_at.strftime("%b %d, %Y")
+
         c_req_edges = [p for p in prereqs if p.concept_id == c.id]
         req_details = []
-        is_locked = False
-        lock_reason = None
-        
-        if c_req_edges and not is_ready:
-            is_locked = True
-            unmet_reasons = []
-            for pe in c_req_edges:
-                req_c = db.query(Concept).filter(Concept.id == pe.requires_concept_id).first()
-                req_eff = int(round(graph.get_effective_mastery(pe.requires_concept_id) * 100))
-                req_details.append({
+        unmet_reqs = []
+
+        for pe in c_req_edges:
+            req_c = concept_map.get(pe.requires_concept_id)
+            req_name = req_c.name if req_c else f"Concept {pe.requires_concept_id}"
+            req_eff = int(round(graph.get_effective_mastery(pe.requires_concept_id) * 100))
+            satisfied = (req_eff >= 60)
+            req_details.append({
+                "id": pe.requires_concept_id,
+                "name": req_name,
+                "current_mastery": req_eff,
+                "required_mastery": 60,
+                "satisfied": satisfied
+            })
+            if not satisfied:
+                unmet_reqs.append({
                     "id": pe.requires_concept_id,
-                    "name": req_c.name if req_c else f"Concept {pe.requires_concept_id}",
-                    "current_mastery": req_eff,
-                    "required_mastery": 60,
-                    "satisfied": req_eff >= 60
-                })
-                if req_eff < 60:
-                    unmet_reasons.append(f"Requires ≥60% in '{req_c.name if req_c else 'prerequisite'}' (current: {req_eff}%)")
-            lock_reason = "🔒 " + "; ".join(unmet_reasons) + ". Complete prerequisites to unlock."
-        elif c_req_edges:
-            for pe in c_req_edges:
-                req_c = db.query(Concept).filter(Concept.id == pe.requires_concept_id).first()
-                req_eff = int(round(graph.get_effective_mastery(pe.requires_concept_id) * 100))
-                req_details.append({
-                    "id": pe.requires_concept_id,
-                    "name": req_c.name if req_c else f"Concept {pe.requires_concept_id}",
-                    "current_mastery": req_eff,
-                    "required_mastery": 60,
-                    "satisfied": req_eff >= 60
+                    "name": req_name,
+                    "current_mastery": req_eff
                 })
 
-        display_status = "locked" if is_locked else raw_status
+        is_locked = (len(c_req_edges) > 0 and not is_ready)
+        lock_reason = None
+        action_target_concept_id = c.id
+        action_label = f"Practice {c.name}"
+
+        if is_locked:
+            lock_reasons_str = [f"Requires ≥60% in '{u['name']}' (current: {u['current_mastery']}%)" for u in unmet_reqs]
+            lock_reason = "🔒 " + "; ".join(lock_reasons_str) + ". Complete prerequisites to unlock."
+            if unmet_reqs:
+                unmet_reqs.sort(key=lambda x: x["current_mastery"])
+                action_target_concept_id = unmet_reqs[0]["id"]
+                action_label = f"Practice Prerequisite: {unmet_reqs[0]['name']}"
+
+        # Downstream dependents
+        dependents = []
+        for pe in prereqs:
+            if pe.requires_concept_id == c.id:
+                dep_c = concept_map.get(pe.concept_id)
+                if dep_c:
+                    dep_eff = int(round(graph.get_effective_mastery(dep_c.id) * 100))
+                    dep_locked = (dep_c.id in concept_map and not graph.is_prerequisite_ready(dep_c.id, threshold=0.6))
+                    dependents.append({
+                        "id": dep_c.id,
+                        "name": dep_c.name,
+                        "current_mastery": dep_eff,
+                        "is_locked": dep_locked
+                    })
+
+        needs_revision = (status == "revision_required")
+        revision_reason = None
+        if needs_revision:
+            revision_reason = f"Memory retention decayed to {retrievability_pct}% over {days_since_practice} days. Practice now to reinforce stability."
+            action_label = f"Review {c.name} (Decay Detected)"
+
+        # Topic & Subtopic hierarchy
+        sub_t = topic_map.get(c.topic_id)
+        subtopic_name = sub_t.name if sub_t else "General"
+        parent_t_id = sub_t.parent_id if sub_t and sub_t.parent_id else c.topic_id
+        parent_t = topic_map.get(parent_t_id)
+        parent_topic_name = parent_t.name if parent_t else subtopic_name
+
+        # Concept attempts stats
+        c_atts = user_attempts_by_cid.get(c.id, [])
+        c_att_count = len(c_atts)
+        c_acc_pct = int(round(sum(1 for a in c_atts if a.is_correct) / c_att_count * 100)) if c_att_count > 0 else None
+
+        # Bottleneck detection
+        downstream_blocked = graph.get_downstream_blocked_count(c.id)
+        is_bottleneck = (downstream_blocked >= 2 and eff_pct < 60)
+
+        # Misconceptions on this concept
+        c_misconceptions = misconceptions_by_cid.get(c.id, [])
+
+        pos = coords.get(c.id, {"layer": 0, "order_in_layer": 0, "x": 80, "y": 80})
 
         nodes.append({
             "id": c.id,
             "name": c.name,
+            "description": getattr(c, "description", None) or f"Core curriculum concept covering principles and mechanics of {c.name}.",
             "topic_id": c.topic_id,
-            "topic_name": topics.get(c.topic_id, "General"),
+            "topic_name": subtopic_name,
+            "parent_topic_id": parent_t_id,
+            "parent_topic_name": parent_topic_name,
+            "subtopic_id": c.topic_id,
+            "subtopic_name": subtopic_name,
+            "layer": pos["layer"],
+            "order_in_layer": pos["order_in_layer"],
+            "x": pos["x"],
+            "y": pos["y"],
+            "p_known_pct": p_known_pct,
             "effective_mastery": eff_pct,
-            "status": display_status,
+            "retrievability_pct": retrievability_pct,
+            "stability_days": stability,
+            "days_since_practice": days_since_practice,
+            "last_practiced_at": last_practiced_str,
+            "n_observations": n_obs,
+            "recent_accuracy_pct": c_acc_pct,
+            "recent_attempts_count": c_att_count,
+            "status": status,
             "is_locked": is_locked,
             "lock_reason": lock_reason,
-            "prerequisites": req_details
+            "needs_revision": needs_revision,
+            "revision_reason": revision_reason,
+            "is_bottleneck": is_bottleneck,
+            "blocked_downstream_count": downstream_blocked,
+            "prerequisites": req_details,
+            "dependents": dependents,
+            "action_target_concept_id": action_target_concept_id,
+            "action_label": action_label,
+            "tutor_prompts": {
+                "standard": f"Explain {c.name} with source citations from the course material.",
+                "analogy": f"Explain {c.name} using an intuitive real-world analogy.",
+                "first_principles": f"Explain {c.name} starting from first principles and mathematical invariants.",
+                "socratic": f"Teach me {c.name} through Socratic dialogue and guided inquiry questions."
+            },
+            "misconceptions": [
+                {
+                    "title": m["title"],
+                    "summary": m["summary"],
+                    "confidence_level": m["confidence_level"],
+                    "wrong_count": m["wrong_count"]
+                }
+                for m in c_misconceptions
+            ]
         })
 
     edges = []
@@ -526,10 +710,98 @@ def get_learning_path_graph(user_id: int, course_id: int = 1, db: Session = Depe
                 "from": pe.requires_concept_id,
                 "to": pe.concept_id,
                 "from_name": src["name"],
-                "to_name": tgt["name"]
+                "to_name": tgt["name"],
+                "from_x": src["x"],
+                "from_y": src["y"],
+                "to_x": tgt["x"],
+                "to_y": tgt["y"],
+                "satisfied": src["effective_mastery"] >= 60
             })
 
-    return {"nodes": nodes, "edges": edges, "user_id": user_id}
+    mastered_count = sum(1 for n in nodes if n["status"] == "mastered")
+    locked_count = sum(1 for n in nodes if n["is_locked"])
+    learning_count = sum(1 for n in nodes if n["status"] in ["learning", "weak"])
+    available_count = sum(1 for n in nodes if not n["is_locked"] and n["status"] not in ["mastered"])
+    revision_count = sum(1 for n in nodes if n["needs_revision"])
+    overall_mastery = int(round(sum(n["effective_mastery"] for n in nodes) / len(nodes))) if nodes else 0
+    completion_pct = int(round(mastered_count / len(nodes) * 100)) if nodes else 0
+
+    # Last meaningful activity
+    last_activity = None
+    if attempts_query:
+        latest_att, latest_cid = attempts_query[0]
+        latest_cname = concept_map.get(latest_cid).name if latest_cid in concept_map else "Course Quiz"
+        last_activity = {
+            "date": latest_att.created_at.strftime("%b %d, %Y") if latest_att.created_at else "Recently",
+            "concept_name": latest_cname,
+            "is_correct": latest_att.is_correct,
+            "type": "quiz_attempt"
+        }
+
+    # Knowledge Intelligence payload
+    confidence_data = get_confidence_insights(user_id=user_id, db=db)
+    bottlenecks_list = graph.get_bottlenecks()
+    forgetting_risk_list = [n for n in nodes if n["needs_revision"] or n["retrievability_pct"] < 70]
+    weak_concepts_list = [n for n in nodes if n["status"] in ["weak", "learning"] and n["effective_mastery"] < 50]
+    strong_concepts_list = [n for n in nodes if n["effective_mastery"] >= 80]
+
+    # Course hierarchy tree
+    hierarchy_tree = []
+    for rt in all_course_topics:
+        if rt.parent_id is None:
+            sub_items = []
+            for st in all_course_topics:
+                if st.parent_id == rt.id:
+                    st_concepts = [n for n in nodes if n["subtopic_id"] == st.id]
+                    sub_items.append({
+                        "id": st.id,
+                        "name": st.name,
+                        "concepts": [{"id": sc["id"], "name": sc["name"], "status": sc["status"], "mastery": sc["effective_mastery"]} for sc in st_concepts]
+                    })
+            direct_c = [n for n in nodes if n["subtopic_id"] == rt.id]
+            if direct_c:
+                sub_items.append({
+                    "id": rt.id,
+                    "name": "General Concepts",
+                    "concepts": [{"id": sc["id"], "name": sc["name"], "status": sc["status"], "mastery": sc["effective_mastery"]} for sc in direct_c]
+                })
+            hierarchy_tree.append({
+                "id": rt.id,
+                "name": rt.name,
+                "subtopics": sub_items
+            })
+
+    recommendation = next_best_action(db, user_id, course_id=course_id)
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "user_id": user_id,
+        "user_name": user.name,
+        "course_id": course_id,
+        "course_title": course.title,
+        "summary": {
+            "total_concepts": len(nodes),
+            "mastered_count": mastered_count,
+            "learning_count": learning_count,
+            "available_count": available_count,
+            "locked_count": locked_count,
+            "revision_due_count": revision_count,
+            "overall_mastery": overall_mastery,
+            "course_completion_pct": completion_pct,
+            "last_activity": last_activity
+        },
+        "next_recommendation": recommendation,
+        "knowledge_intelligence": {
+            "bottlenecks": bottlenecks_list,
+            "forgetting_risk": forgetting_risk_list,
+            "weak_concepts": weak_concepts_list,
+            "strong_concepts": strong_concepts_list,
+            "confidence_calibration": confidence_data,
+            "active_misconceptions": active_misconceptions_list,
+            "hierarchy_tree": hierarchy_tree
+        }
+    }
 
 
 @router.post("/{user_id}/diagnostic/start")

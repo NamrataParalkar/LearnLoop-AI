@@ -143,7 +143,6 @@ class UploadUrlRequest(BaseModel):
 def process_source_background(source_id: int):
     run_ingestion(source_id)
 
-
 def serialize_course(c: models.Course, db: Session, user: Optional[models.User] = None):
     sources_count = db.query(models.Source).filter(models.Source.course_id == c.id).count() if db else 0
     topics_count = db.query(models.Topic).filter(models.Topic.course_id == c.id).count() if db else 0

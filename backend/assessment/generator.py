@@ -150,6 +150,25 @@ Return JSON:
                 logger.warning(f"Question generation attempt {attempt+1} failed: {e}")
 
         if not candidate:
+            # Fall back to existing question in DB for this concept / scope
+            used_ids = [q.id for q in questions_created]
+            q_query = db.query(Question).filter(Question.course_id == course_id)
+            if chunk.concept_id:
+                q_query = q_query.filter(Question.concept_id == chunk.concept_id)
+            elif concept_ids:
+                q_query = q_query.filter(Question.concept_id.in_(concept_ids))
+            
+            existing_q = q_query.filter(~Question.id.in_(used_ids)).first() if used_ids else q_query.first()
+            if not existing_q and used_ids:
+                # Fall back to any course question not yet added to this session
+                existing_q = db.query(Question).filter(
+                    Question.course_id == course_id,
+                    ~Question.id.in_(used_ids)
+                ).first()
+            if existing_q and existing_q.id not in used_ids:
+                qi = QuizItem(session_id=session.id, question_id=existing_q.id, position=len(questions_created) + 1)
+                db.add(qi)
+                questions_created.append(existing_q)
             continue
 
         # Format options if missing labels
@@ -230,6 +249,42 @@ Return JSON:
         qi = QuizItem(session_id=session.id, question_id=q.id, position=len(questions_created) + 1)
         db.add(qi)
         questions_created.append(q)
+
+    # Fill remaining slots from existing course questions if LLM failed
+    if len(questions_created) < num_questions:
+        used_ids = set(q.id for q in questions_created)
+        q_query = db.query(Question).filter(Question.course_id == course_id)
+        if concept_ids:
+            q_query = q_query.filter(Question.concept_id.in_(concept_ids))
+        elif topic_ids:
+            q_query = q_query.filter(Question.topic_id.in_(topic_ids))
+        if used_ids:
+            q_query = q_query.filter(~Question.id.in_(used_ids))
+        
+        available_qs = q_query.all()
+        for q in available_qs:
+            if q.id not in used_ids:
+                qi = QuizItem(session_id=session.id, question_id=q.id, position=len(questions_created) + 1)
+                db.add(qi)
+                questions_created.append(q)
+                used_ids.add(q.id)
+                if len(questions_created) >= num_questions:
+                    break
+
+        if len(questions_created) < num_questions:
+            broader_qs = db.query(Question).filter(
+                Question.course_id == course_id,
+                ~Question.id.in_(used_ids) if used_ids else True
+            ).limit(num_questions - len(questions_created)).all()
+            for q in broader_qs:
+                if q.id not in used_ids:
+                    qi = QuizItem(session_id=session.id, question_id=q.id, position=len(questions_created) + 1)
+                    db.add(qi)
+                    questions_created.append(q)
+                    used_ids.add(q.id)
+
+    session.num_questions = len(questions_created)
+
 
     # 6. Save verification debug stats
     debug_stats = {

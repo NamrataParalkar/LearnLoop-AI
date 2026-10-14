@@ -33,7 +33,13 @@ import {
   Eye,
   SlidersHorizontal,
   Bookmark,
-  Users
+  Users,
+  ChevronRight,
+  ChevronDown,
+  FileImage,
+  FileAudio,
+  Map,
+  MessageSquare
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +66,7 @@ export default function CoursesPage() {
     courses, 
     myLearning, 
     selectedCourseId, 
+    selectedCourse,
     setSelectedCourseId, 
     createCourse, 
     updateCourse, 
@@ -101,41 +108,59 @@ export default function CoursesPage() {
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
 
-  const teachersList = useMemo(() => {
-    return users.filter(u => u.role === "teacher");
-  }, [users]);
-
-  // Fetch teacher stats if teacher
+  // Fetch teacher analytics if logged in user is a teacher
   useEffect(() => {
     if (isTeacher) {
       fetch(getApiUrl("/api/teacher/dashboard/stats"), {
-        headers: { "X-User-Id": currentUser.id },
+        headers: { "X-User-Id": currentUser.id }
       })
-        .then(res => res.json())
-        .then(data => setTeacherStats(data))
-        .catch(err => console.warn(err));
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data) setTeacherStats(data);
+        })
+        .catch(err => console.warn("Failed fetching teacher stats:", err));
     }
-  }, [isTeacher, currentUser.id, courses]);
+  }, [isTeacher, currentUser.id]);
 
   // Filtered courses
   const filteredCourses = useMemo(() => {
-    return courses.filter(course => {
-      const matchesSearch = 
-        course.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        course.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        course.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        course.teacher?.name?.toLowerCase().includes(searchQuery.toLowerCase());
-
-      const matchesCat = selectedCategory === "All" || course.category === selectedCategory;
-      const matchesDiff = selectedDifficulty === "All" || course.level === selectedDifficulty;
-
-      if (activeTab === "my-courses" && isTeacher) {
-        return matchesSearch && matchesCat && matchesDiff && String(course.teacher_id) === String(currentUser.id);
+    return courses.filter((course) => {
+      // Teacher tab filters to owned courses
+      if (activeTab === "my-courses") {
+        if (String(course.teacher_id) !== String(currentUser.id)) {
+          return false;
+        }
       }
 
-      return matchesSearch && matchesCat && matchesDiff;
+      // Search filter
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesTitle = course.title.toLowerCase().includes(q);
+        const matchesDesc = (course.description || "").toLowerCase().includes(q);
+        const matchesCat = (course.category || "").toLowerCase().includes(q);
+        const matchesTeacher = course.teacher?.name.toLowerCase().includes(q);
+        if (!matchesTitle && !matchesDesc && !matchesCat && !matchesTeacher) {
+          return false;
+        }
+      }
+
+      // Category filter
+      if (selectedCategory !== "All") {
+        if (!course.category?.toLowerCase().includes(selectedCategory.toLowerCase())) {
+          return false;
+        }
+      }
+
+      // Level filter
+      if (selectedDifficulty !== "All") {
+        if (!course.level?.toLowerCase().includes(selectedDifficulty.toLowerCase())) {
+          return false;
+        }
+      }
+
+      return true;
     });
-  }, [courses, searchQuery, selectedCategory, selectedDifficulty, activeTab, isTeacher, currentUser.id]);
+  }, [courses, activeTab, currentUser.id, searchQuery, selectedCategory, selectedDifficulty]);
 
   const openCreateDialog = () => {
     setFormTitle("");
@@ -144,8 +169,8 @@ export default function CoursesPage() {
     setFormCategory("Computer Science");
     setFormLevel("Intermediate");
     setFormStatus("published");
-    setFormDuration(10);
-    setFormObjectives("Master core principles\nSolve real-world scenarios\nPass module verification");
+    setFormDuration(12);
+    setFormObjectives("Master core principles\nImplement hands-on code\nPass milestone assessments");
     setFormPrereqs("Basic programming foundations");
     setFormError("");
     setIsCreateOpen(true);
@@ -200,18 +225,15 @@ export default function CoursesPage() {
     if (res) {
       setIsCreateOpen(false);
       refreshCourses();
+      router.push(`/courses/${res.id}/edit`);
     } else {
-      setFormError("Failed to create course. Please try again.");
+      setFormError("Failed creating course. Verify teacher authorization.");
     }
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetCourse) return;
-    if (!formTitle.trim()) {
-      setFormError("Course title is required.");
-      return;
-    }
 
     setFormSubmitting(true);
     setFormError("");
@@ -232,9 +254,10 @@ export default function CoursesPage() {
     setFormSubmitting(false);
     if (res) {
       setIsEditOpen(false);
+      setTargetCourse(null);
       refreshCourses();
     } else {
-      setFormError("Failed to update course. Please try again.");
+      setFormError("Failed updating course details.");
     }
   };
 
@@ -338,11 +361,11 @@ export default function CoursesPage() {
           <Card className="border-border bg-card">
             <CardContent className="p-4 space-y-1">
               <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Average Rating</span>
-              <p className="text-2xl font-bold text-amber-400 flex items-center gap-1">
+              <div className="flex items-center gap-1 text-2xl font-bold text-amber-400">
                 <Star className="w-5 h-5 fill-amber-400" />
                 {teacherStats.average_rating || 5.0}
-              </p>
-              <span className="text-[10px] text-muted-foreground">{teacherStats.total_reviews || 0} verified reviews</span>
+              </div>
+              <span className="text-[10px] text-muted-foreground">Based on {teacherStats.total_reviews || 0} reviews</span>
             </CardContent>
           </Card>
 
@@ -370,6 +393,10 @@ export default function CoursesPage() {
               <TabsTrigger value="my-learning" className="text-xs font-semibold px-4 py-2 text-indigo-400 data-[state=active]:text-indigo-300">
                 My Learning ({myLearning.length})
               </TabsTrigger>
+              <TabsTrigger value="hierarchy" className="text-xs font-semibold px-4 py-2 text-cyan-400 data-[state=active]:text-cyan-300 gap-1.5 flex items-center">
+                <FolderTree className="w-3.5 h-3.5" />
+                Curriculum Hierarchy
+              </TabsTrigger>
               {isTeacher && (
                 <TabsTrigger value="my-courses" className="text-xs font-semibold px-4 py-2 text-amber-400 data-[state=active]:text-amber-300">
                   Teacher Studio ({courses.filter(c => String(c.teacher_id) === String(currentUser.id)).length})
@@ -379,41 +406,43 @@ export default function CoursesPage() {
           </Tabs>
 
           {/* Search Box & Difficulty Filter */}
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <div className="relative w-full sm:w-64">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search title, teacher, topic..."
-                className="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-border bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
+          {activeTab !== "hierarchy" && (
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative w-full sm:w-64">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search title, teacher, topic..."
+                  className="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-border bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
 
-            <Select value={selectedDifficulty} onValueChange={(v: string | null) => v && setSelectedDifficulty(v)}>
-              <SelectTrigger className="w-[130px] text-xs h-9 bg-card">
-                <SelectValue placeholder="Difficulty" />
-              </SelectTrigger>
-              <SelectContent>
-                {LEVELS.map(l => (
-                  <SelectItem key={l} value={l} className="text-xs">{l === "All" ? "All Levels" : l}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+              <Select value={selectedDifficulty} onValueChange={(v: string | null) => v && setSelectedDifficulty(v)}>
+                <SelectTrigger className="w-[130px] text-xs h-9 bg-card">
+                  <SelectValue placeholder="Difficulty" />
+                </SelectTrigger>
+                <SelectContent>
+                  {LEVELS.map(l => (
+                    <SelectItem key={l} value={l} className="text-xs">{l === "All" ? "All Levels" : l}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
 
         {/* Categories Chips */}
-        {activeTab !== "my-learning" && (
+        {activeTab !== "my-learning" && activeTab !== "hierarchy" && (
           <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar text-xs">
             <span className="text-muted-foreground flex items-center gap-1 shrink-0 font-medium mr-1">
               <Filter className="w-3.5 h-3.5" /> Category:
@@ -435,8 +464,11 @@ export default function CoursesPage() {
         )}
       </div>
 
-      {/* MY LEARNING TAB VIEW */}
-      {activeTab === "my-learning" ? (
+      {/* CURRICULUM HIERARCHY TAB VIEW */}
+      {activeTab === "hierarchy" ? (
+        <CurriculumHierarchyView courseId={parseInt(selectedCourseId, 10) || 1} activeCourse={selectedCourse} />
+      ) : activeTab === "my-learning" ? (
+        /* MY LEARNING TAB VIEW */
         myLearning.length === 0 ? (
           <Card className="p-12 text-center border-dashed border-border bg-card/40">
             <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-4 text-muted-foreground">
@@ -457,205 +489,185 @@ export default function CoursesPage() {
             {myLearning.map((item) => (
               <Card key={item.enrollment_id} className="border-border hover:border-indigo-500/50 transition-all flex flex-col justify-between">
                 <div>
-                  <div className="h-1.5 w-full bg-indigo-600" />
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                      <Badge variant="outline">{item.course.category}</Badge>
-                      <Badge variant="secondary" className="text-[10px] uppercase font-bold text-indigo-400">
-                        {item.course.level}
+                      <span className="font-semibold text-primary">{item.course.category}</span>
+                      <Badge variant="outline" className="text-[10px] border-emerald-500/40 text-emerald-400">
+                        Enrolled
                       </Badge>
                     </div>
-                    <CardTitle className="text-base font-bold text-foreground line-clamp-1">
+                    <CardTitle className="text-base font-bold line-clamp-1 text-foreground">
                       {item.course.title}
                     </CardTitle>
-                    <p className="text-xs text-muted-foreground">
-                      Instructor: <strong>{item.course.teacher.name}</strong>
-                    </p>
+                    <CardDescription className="text-xs line-clamp-2 mt-1">
+                      {item.course.short_summary || "Continue where you left off in your modules and lessons."}
+                    </CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-3 pb-3">
+
+                  <CardContent className="space-y-4 pt-0">
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="text-muted-foreground">Progress</span>
-                        <span className="font-semibold text-foreground">{item.progress.progress_percentage}%</span>
+                        <span className="text-muted-foreground font-medium">Course Mastery Progress</span>
+                        <span className="font-bold text-foreground">{item.progress.progress_percentage}%</span>
                       </div>
-                      <Progress value={item.progress.progress_percentage} className="h-2" />
+                      <Progress value={item.progress.progress_percentage} className="h-2 bg-muted" />
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
+                        <span>{item.progress.completed_lessons} of {item.progress.total_lessons} lessons completed</span>
+                        {item.progress.is_completed && (
+                          <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                            <CheckCircle2 className="w-3 h-3" /> Completed
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      {item.progress.completed_lessons} of {item.progress.total_lessons} lessons completed
-                    </p>
+
+                    <div className="text-[11px] text-muted-foreground flex items-center justify-between border-t border-border/50 pt-2.5">
+                      <span>Instructor: <strong className="text-foreground">{item.course.teacher?.name || "LearnLoop Faculty"}</strong></span>
+                      <span>Level: <strong className="text-foreground">{item.course.level}</strong></span>
+                    </div>
                   </CardContent>
                 </div>
 
-                <CardFooter className="pt-2 pb-4 flex items-center justify-between border-t border-border/60 bg-muted/20">
+                <CardFooter className="pt-2 border-t border-border flex items-center justify-between gap-2">
                   <Button
-                    size="sm"
                     variant="outline"
-                    onClick={() => router.push(`/courses/${item.course.id}`)}
-                    className="text-xs"
+                    size="sm"
+                    className="text-xs h-8 border-border"
+                    onClick={() => {
+                      setSelectedCourseId(String(item.course.id));
+                      setActiveTab("hierarchy");
+                    }}
                   >
-                    Syllabus
+                    <FolderTree className="w-3.5 h-3.5 mr-1" />
+                    Knowledge Tree
                   </Button>
                   <Button
                     size="sm"
+                    className="text-xs h-8 bg-indigo-600 hover:bg-indigo-500 text-white font-medium gap-1.5"
                     onClick={() => {
-                      if (item.last_lesson_id) {
-                        router.push(`/courses/${item.course.id}/lessons/${item.last_lesson_id}`);
-                      } else {
-                        router.push(`/courses/${item.course.id}`);
-                      }
+                      setSelectedCourseId(String(item.course.id));
+                      router.push(`/courses/${item.course.id}`);
                     }}
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs gap-1.5"
                   >
-                    Resume <ArrowRight className="w-3.5 h-3.5" />
+                    Continue Learning
+                    <ArrowRight className="w-3.5 h-3.5" />
                   </Button>
                 </CardFooter>
               </Card>
             ))}
           </div>
         )
-      ) : filteredCourses.length === 0 ? (
-        <Card className="p-12 text-center border-dashed border-border bg-card/40">
-          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-4 text-muted-foreground">
-            <BookOpen className="w-6 h-6" />
-          </div>
-          <h3 className="text-lg font-semibold text-foreground">No courses found</h3>
-          <p className="text-sm text-muted-foreground mt-1 max-w-md mx-auto">
-            {searchQuery 
-              ? `No courses matched your query "${searchQuery}".`
-              : activeTab === "my-courses"
-                ? "You haven't authored any courses yet."
-                : "No courses currently available in this category."}
-          </p>
-          <div className="mt-6 flex justify-center gap-3">
-            {searchQuery && (
-              <Button variant="outline" size="sm" onClick={() => { setSearchQuery(""); setSelectedCategory("All"); setSelectedDifficulty("All"); }}>
-                Clear Filters
-              </Button>
-            )}
-            {isTeacher && (
-              <Button size="sm" className="bg-indigo-600 hover:bg-indigo-500 text-white" onClick={openCreateDialog}>
-                <Plus className="w-3.5 h-3.5 mr-1.5" /> Create Course
-              </Button>
-            )}
-          </div>
-        </Card>
       ) : (
+        /* COURSE CATALOG & MY COURSES GRID */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredCourses.map((course) => {
-            const isSelected = String(course.id) === selectedCourseId;
-            const canManage = isTeacher && (String(course.teacher_id) === String(currentUser.id) || currentUser.role === "admin");
             const isEnrolled = course.user_enrollment?.is_enrolled;
+            const progress = course.user_enrollment?.progress_percentage || 0;
+            const isOwner = String(course.teacher_id) === String(currentUser.id);
 
             return (
-              <Card 
+              <Card
                 key={course.id}
-                className={`group relative flex flex-col justify-between transition-all duration-200 border overflow-hidden ${
-                  isSelected 
-                    ? "border-indigo-500/80 bg-gradient-to-b from-indigo-950/20 to-card shadow-lg ring-1 ring-indigo-500/30" 
-                    : "border-border/70 hover:border-border hover:shadow-md bg-card"
+                className={`border transition-all duration-200 flex flex-col justify-between hover:shadow-lg ${
+                  isEnrolled ? 'border-primary/40 bg-card/80' : 'border-border bg-card'
                 }`}
               >
                 <div>
-                  <div className="h-2 w-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 opacity-80" />
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <Badge variant="outline" className="text-[11px] font-medium bg-muted/40 border-border text-foreground">
-                        {course.category}
-                      </Badge>
-
+                  <CardHeader className="pb-3 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2">
-                        {course.status && course.status !== "published" && (
-                          <Badge variant="secondary" className="text-[10px] uppercase font-bold bg-amber-500/10 text-amber-400">
-                            {course.status}
-                          </Badge>
-                        )}
-                        <Badge 
-                          variant="secondary" 
-                          className={`text-[10px] uppercase font-bold ${
-                            course.level === 'Beginner' ? 'text-emerald-400 bg-emerald-500/10' :
-                            course.level === 'Intermediate' ? 'text-indigo-400 bg-indigo-500/10' :
-                            'text-amber-400 bg-amber-500/10'
-                          }`}
-                        >
+                        <Badge variant="secondary" className="text-[10px] uppercase font-semibold">
+                          {course.category}
+                        </Badge>
+                        <Badge variant="outline" className="text-[10px]">
                           {course.level}
                         </Badge>
                       </div>
+
+                      <div className="flex items-center gap-1.5">
+                        {isOwner && (
+                          <Badge variant="outline" className={`text-[10px] ${course.status === 'published' ? 'border-emerald-500/40 text-emerald-400' : 'border-amber-500/40 text-amber-400'}`}>
+                            {course.status}
+                          </Badge>
+                        )}
+                        <span className="flex items-center gap-1 text-amber-400 font-bold text-xs">
+                          <Star className="w-3.5 h-3.5 fill-amber-400" />
+                          {course.rating || 5.0}
+                        </span>
+                      </div>
                     </div>
 
-                    <CardTitle 
-                      onClick={() => router.push(`/courses/${course.id}`)}
-                      className="text-lg font-bold leading-snug group-hover:text-indigo-400 transition-colors line-clamp-1 cursor-pointer"
-                    >
+                    <CardTitle className="text-lg font-bold text-foreground leading-snug line-clamp-1">
                       {course.title}
                     </CardTitle>
 
-                    {/* Teacher Attributed Details */}
-                    <div className="flex items-center justify-between pt-1 text-xs text-muted-foreground border-t border-border/40">
-                      <div className="flex items-center gap-1.5 truncate">
-                        <GraduationCap className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                        <span className="font-medium text-foreground truncate">
-                          {course.teacher?.name || "Faculty Instructor"}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 text-amber-400 font-bold shrink-0">
-                        <Star className="w-3.5 h-3.5 fill-amber-400" />
-                        <span>{course.rating || 5.0}</span>
-                      </div>
-                    </div>
+                    <CardDescription className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+                      {course.short_summary || course.description}
+                    </CardDescription>
                   </CardHeader>
 
-                  <CardContent className="space-y-4 pb-3">
-                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                      {course.short_summary || course.description}
-                    </p>
+                  <CardContent className="space-y-4 pt-0">
+                    <div className="grid grid-cols-3 gap-2 py-2 border-y border-border/50 text-[11px] text-muted-foreground">
+                      <div className="flex flex-col items-center justify-center p-1.5 bg-muted/30 rounded">
+                        <Layers className="w-3.5 h-3.5 text-indigo-400 mb-0.5" />
+                        <span className="font-semibold text-foreground">{course.stats?.modules_count || 3}</span>
+                        <span className="text-[9px]">Modules</span>
+                      </div>
+                      <div className="flex flex-col items-center justify-center p-1.5 bg-muted/30 rounded">
+                        <PlayCircle className="w-3.5 h-3.5 text-emerald-400 mb-0.5" />
+                        <span className="font-semibold text-foreground">{course.stats?.lessons_count || 12}</span>
+                        <span className="text-[9px]">Lessons</span>
+                      </div>
+                      <div className="flex flex-col items-center justify-center p-1.5 bg-muted/30 rounded">
+                        <Users className="w-3.5 h-3.5 text-primary mb-0.5" />
+                        <span className="font-semibold text-foreground">{course.stats?.enrollments_count || 0}</span>
+                        <span className="text-[9px]">Students</span>
+                      </div>
+                    </div>
 
-                    {/* Meta stats */}
-                    <div className="grid grid-cols-3 gap-2 p-2 rounded-lg bg-muted/40 text-xs text-muted-foreground border border-border/50 text-center">
-                      <div>
-                        <span className="text-[10px] uppercase block">Modules</span>
-                        <strong className="text-foreground">{course.stats?.modules_count || 1}</strong>
+                    {isEnrolled && (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-muted-foreground font-medium">Your Completion</span>
+                          <span className="font-bold text-emerald-400">{progress}%</span>
+                        </div>
+                        <Progress value={progress} className="h-1.5 bg-muted" />
                       </div>
-                      <div>
-                        <span className="text-[10px] uppercase block">Lessons</span>
-                        <strong className="text-foreground">{course.stats?.lessons_count || 1}</strong>
-                      </div>
-                      <div>
-                        <span className="text-[10px] uppercase block">Duration</span>
-                        <strong className="text-foreground">{course.estimated_duration_hours || 10}h</strong>
-                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span className="flex items-center gap-1.5 truncate max-w-[180px]">
+                        <UserCheck className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <span className="truncate">{course.teacher?.name || "LearnLoop Faculty"}</span>
+                      </span>
+                      <span className="flex items-center gap-1 shrink-0">
+                        <Clock className="w-3 h-3" />
+                        ~{course.estimated_duration_hours || 10}h
+                      </span>
                     </div>
                   </CardContent>
                 </div>
 
-                {/* Footer Actions */}
-                <CardFooter className="pt-2 pb-4 flex items-center justify-between border-t border-border/60 bg-muted/20">
-                  <div className="flex items-center gap-1">
-                    {canManage && (
+                <CardFooter className="pt-3 border-t border-border flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    {/* Faculty management actions */}
+                    {(isOwner || currentUser.role === "admin") && (
                       <>
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => router.push(`/courses/${course.id}/edit`)}
-                          title="Manage curriculum"
-                          className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
-                        >
-                          <Layers className="w-3.5 h-3.5 text-indigo-400" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                          title="Edit Course"
                           onClick={(e) => openEditDialog(course, e)}
-                          title="Edit course settings"
-                          className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
+                          className="h-8 w-8 text-rose-400 hover:text-rose-500"
+                          title="Delete Course"
                           onClick={(e) => openDeleteDialog(course, e)}
-                          title="Delete course"
-                          className="h-8 w-8 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </Button>
@@ -760,9 +772,9 @@ export default function CoursesPage() {
                   onChange={(e) => setFormLevel(e.target.value)}
                   className="w-full p-2 text-xs rounded-md border border-border bg-background"
                 >
-                  <option value="Beginner">Beginner</option>
-                  <option value="Intermediate">Intermediate</option>
-                  <option value="Advanced">Advanced</option>
+                  {LEVELS.filter(l => l !== "All").map(l => (
+                    <option key={l} value={l}>{l}</option>
+                  ))}
                 </select>
               </div>
 
@@ -775,17 +787,43 @@ export default function CoursesPage() {
                 >
                   <option value="published">Published</option>
                   <option value="draft">Draft (Private)</option>
+                  <option value="archived">Archived</option>
                 </select>
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="font-semibold text-foreground">Est. Duration (hours)</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={formDuration}
+                  onChange={(e) => setFormDuration(Number(e.target.value))}
+                  className="w-full px-3 py-2 text-xs rounded-md border border-border bg-background"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-foreground">Prerequisites (one per line)</label>
+                <textarea
+                  rows={2}
+                  value={formPrereqs}
+                  onChange={(e) => setFormPrereqs(e.target.value)}
+                  placeholder="Basic Python, Linear Algebra..."
+                  className="w-full px-3 py-2 text-xs rounded-md border border-border bg-background resize-none"
+                />
+              </div>
+            </div>
+
             <div className="space-y-1">
-              <label className="font-semibold text-foreground">Learning Objectives (1 per line)</label>
+              <label className="font-semibold text-foreground">Key Learning Objectives (one per line)</label>
               <textarea
                 rows={2}
                 value={formObjectives}
                 onChange={(e) => setFormObjectives(e.target.value)}
-                className="w-full p-2 text-xs rounded-md border border-border bg-background resize-none"
+                placeholder="1. Grasp fundamental algorithms\n2. Design scalable architectures"
+                className="w-full px-3 py-2 text-xs rounded-md border border-border bg-background resize-none"
               />
             </div>
 
@@ -793,8 +831,8 @@ export default function CoursesPage() {
               <Button type="button" variant="outline" size="sm" onClick={() => setIsCreateOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" size="sm" disabled={formSubmitting} className="bg-indigo-600 hover:bg-indigo-500 text-white">
-                {formSubmitting ? "Creating..." : "Save & Continue to Builder"}
+              <Button type="submit" size="sm" disabled={formSubmitting} className="bg-indigo-600 hover:bg-indigo-500 text-white font-medium">
+                {formSubmitting ? "Creating..." : "Create Course"}
               </Button>
             </DialogFooter>
           </form>
@@ -807,8 +845,11 @@ export default function CoursesPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-bold">
               <Edit3 className="w-5 h-5 text-indigo-400" />
-              Edit Course Properties
+              Edit Course Settings
             </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Modify course metadata, publication visibility, and target curriculum goals.
+            </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleEditSubmit} className="space-y-3 mt-2 text-xs">
@@ -819,7 +860,7 @@ export default function CoursesPage() {
             )}
 
             <div className="space-y-1">
-              <label className="font-semibold text-foreground">Course Title *</label>
+              <label className="font-semibold text-foreground">Course Title</label>
               <input
                 type="text"
                 required
@@ -840,7 +881,7 @@ export default function CoursesPage() {
             </div>
 
             <div className="space-y-1">
-              <label className="font-semibold text-foreground">Detailed Description</label>
+              <label className="font-semibold text-foreground">Description</label>
               <textarea
                 rows={3}
                 value={formDescription}
@@ -870,9 +911,9 @@ export default function CoursesPage() {
                   onChange={(e) => setFormLevel(e.target.value)}
                   className="w-full p-2 text-xs rounded-md border border-border bg-background"
                 >
-                  <option value="Beginner">Beginner</option>
-                  <option value="Intermediate">Intermediate</option>
-                  <option value="Advanced">Advanced</option>
+                  {LEVELS.filter(l => l !== "All").map(l => (
+                    <option key={l} value={l}>{l}</option>
+                  ))}
                 </select>
               </div>
 
@@ -930,6 +971,277 @@ export default function CoursesPage() {
               {formSubmitting ? "Deleting..." : "Permanently Delete"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// Sub-component for Curriculum Hierarchy & Knowledge Grounding Explorer
+function CurriculumHierarchyView({ courseId, activeCourse }: { courseId: number; activeCourse: any }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [expandedTopics, setExpandedTopics] = useState<Record<number, boolean>>({ 1: true, 2: true, 3: true });
+  const [expandedSubtopics, setExpandedSubtopics] = useState<Record<number, boolean>>({ 2: true, 4: true, 6: true });
+  const [selectedConcept, setSelectedConcept] = useState<any>(null);
+  const [selectedChunk, setSelectedChunk] = useState<any>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(getApiUrl(`/api/courses/${courseId}/hierarchy`))
+      .then(res => res.json())
+      .then(d => {
+        setData(d);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, [courseId]);
+
+  const toggleTopic = (id: number) => {
+    setExpandedTopics(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const toggleSubtopic = (id: number) => {
+    setExpandedSubtopics(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  if (loading) {
+    return (
+      <div className="p-8 flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground animate-pulse">
+          <FolderTree className="h-8 w-8 text-primary" />
+          <p className="text-sm">Loading course knowledge hierarchy...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data || !data.tree || data.tree.length === 0) {
+    return (
+      <Card className="border-dashed p-12 text-center bg-card/40">
+        <CardTitle className="text-lg">No Course Modules Found</CardTitle>
+        <CardDescription className="mt-2">
+          Upload course materials or sync syllabus for {activeCourse?.title || "this course"}.
+        </CardDescription>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded">
+              Course Structure
+            </span>
+            <span className="text-xs text-muted-foreground">Authoritative Ground Truth</span>
+          </div>
+          <h2 className="text-xl md:text-2xl font-bold tracking-tight mt-1 text-foreground">
+            {activeCourse?.title || "Course Knowledge Tree"}
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Browse course modules, tagged source chunks, and jump directly to the adaptive roadmap.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link href="/learning-path">
+            <Button className="gap-2 shadow-sm h-9 text-xs">
+              <Map className="h-4 w-4" />
+              Open Learning Roadmap
+            </Button>
+          </Link>
+        </div>
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-6">
+        {/* Knowledge Tree Panel */}
+        <Card className="flex-1 overflow-hidden shadow-sm">
+          <CardHeader className="border-b bg-muted/20 pb-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                <FolderTree className="w-5 h-5 text-primary" />
+                Curriculum Hierarchy
+              </CardTitle>
+              <div className="text-xs text-muted-foreground flex items-center gap-3">
+                <span>Tagged Chunks: <strong className="text-foreground">{data.stats?.tagged_chunks || 0}</strong></span>
+                <span>Untagged: <strong className="text-foreground">{data.stats?.untagged_chunks || 0}</strong></span>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-4 space-y-3 max-h-[700px] overflow-y-auto">
+            {data.tree?.map((topic: any) => (
+              <div key={topic.id} className="border rounded-lg overflow-hidden bg-card/60 transition-all">
+                <div 
+                  className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/40 transition-colors select-none"
+                  onClick={() => toggleTopic(topic.id)}
+                >
+                  <div className="flex items-center gap-2.5">
+                    {expandedTopics[topic.id] ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                    <span className="font-semibold text-sm text-foreground">{topic.name}</span>
+                  </div>
+                  <Badge variant="secondary" className="text-xs font-normal">
+                    {topic.subtopics?.length || 0} Subtopics
+                  </Badge>
+                </div>
+                
+                {expandedTopics[topic.id] && (
+                  <div className="pl-4 pr-3 pb-3 pt-1 space-y-2 border-t border-border/40 bg-background/50">
+                    {topic.subtopics?.map((sub: any) => (
+                      <div key={sub.id} className="border-l-2 border-primary/30 pl-3 py-1 space-y-1">
+                        <div 
+                          className="flex items-center justify-between py-1 cursor-pointer hover:text-primary transition-colors text-xs font-medium text-foreground select-none"
+                          onClick={() => toggleSubtopic(sub.id)}
+                        >
+                          <div className="flex items-center gap-2">
+                            {expandedSubtopics[sub.id] ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />}
+                            <span>{sub.name}</span>
+                          </div>
+                          <span className="text-[11px] text-muted-foreground">{sub.concepts?.length || 0} Concepts</span>
+                        </div>
+                        
+                        {expandedSubtopics[sub.id] && (
+                          <div className="pl-5 pt-1 space-y-1.5">
+                            {sub.concepts?.map((concept: any) => (
+                              <div 
+                                key={concept.id}
+                                className={`flex items-center justify-between p-2 rounded-md cursor-pointer transition-all border text-xs ${
+                                  selectedConcept?.id === concept.id 
+                                    ? 'bg-primary/10 border-primary/40 text-foreground font-medium shadow-sm' 
+                                    : 'border-transparent hover:bg-muted/50 text-muted-foreground hover:text-foreground'
+                                }`}
+                                onClick={() => setSelectedConcept(concept)}
+                              >
+                                <span className="truncate pr-2">{concept.name}</span>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                    {concept.chunk_count} chunks
+                                  </Badge>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            
+            {data.prerequisites && data.prerequisites.length > 0 && (
+              <div className="mt-6 pt-4 border-t">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+                  Prerequisite Dependencies
+                </h3>
+                <div className="space-y-1.5">
+                  {data.prerequisites.slice(0, 6).map((p: any, i: number) => (
+                    <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/20 p-1.5 rounded border border-border/40">
+                      <span className="font-medium text-foreground">{p.requires}</span>
+                      <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                      <span className="text-primary font-medium">{p.concept}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Concept Detail & Cross-Module Action Panel */}
+        <Card className="flex-1 overflow-hidden shadow-sm flex flex-col">
+          <CardHeader className="border-b bg-muted/20 pb-4">
+            <CardTitle className="text-base font-semibold">
+              {selectedConcept ? selectedConcept.name : "Concept Inspector"}
+            </CardTitle>
+            <CardDescription className="text-xs">
+              {selectedConcept ? "Grounded knowledge source chunks and direct module actions" : "Select any concept on the left to inspect its sources and actions"}
+            </CardDescription>
+          </CardHeader>
+
+          {selectedConcept ? (
+            <div className="flex-1 flex flex-col justify-between p-4 space-y-4 overflow-y-auto max-h-[700px]">
+              {/* Quick Jump Action Bar */}
+              <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium text-primary mr-auto">Fast Actions:</span>
+                <Link href={`/learning-path?concept_id=${selectedConcept.id}`}>
+                  <Button size="sm" variant="default" className="h-8 gap-1.5 text-xs">
+                    <Map className="w-3.5 h-3.5" />
+                    Focus in Roadmap
+                  </Button>
+                </Link>
+                <Link href={`/quiz?course_id=${courseId}&concept_id=${selectedConcept.id}`}>
+                  <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+                    <GraduationCap className="w-3.5 h-3.5" />
+                    Practice Quiz
+                  </Button>
+                </Link>
+                <Link href={`/tutor?course_id=${courseId}&concept=${encodeURIComponent(selectedConcept.name)}`}>
+                  <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    Ask AI Tutor
+                  </Button>
+                </Link>
+              </div>
+
+              {/* Chunks List */}
+              <div className="space-y-3 flex-1">
+                <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Associated Knowledge Chunks ({selectedConcept.chunks?.length || 0})
+                </div>
+                {selectedConcept.chunks?.map((chunk: any) => (
+                  <div key={chunk.id} className="p-3.5 rounded-lg border bg-card/60 space-y-2 hover:border-primary/40 transition-colors">
+                    <div className="flex items-center justify-between gap-2">
+                      <Badge 
+                        variant="secondary"
+                        className="text-[11px] cursor-pointer hover:bg-secondary/80 gap-1.5" 
+                        onClick={() => setSelectedChunk(chunk)}
+                      >
+                        {chunk.type === 'text' && <FileText className="w-3 h-3 text-blue-500" />}
+                        {chunk.type === 'figure' && <FileImage className="w-3 h-3 text-purple-500" />}
+                        {chunk.type === 'transcript' && <FileAudio className="w-3 h-3 text-amber-500" />}
+                        Source {chunk.source_id} {chunk.loc ? `(Loc: ${chunk.loc})` : ''}
+                      </Badge>
+                      <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-muted-foreground" onClick={() => setSelectedChunk(chunk)}>
+                        Full Text
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed font-mono line-clamp-3">
+                      {chunk.text}...
+                    </p>
+                  </div>
+                ))}
+                {(!selectedConcept.chunks || selectedConcept.chunks.length === 0) && (
+                  <div className="text-muted-foreground text-xs text-center py-12 border border-dashed rounded-lg">
+                    No source chunks tagged for this concept yet.
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted-foreground gap-3">
+              <FolderTree className="h-10 w-10 text-muted-foreground/40 stroke-1" />
+              <p className="text-sm">Click any concept in the curriculum tree to inspect its knowledge grounding and launch targeted study sessions.</p>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* Source Viewer Modal */}
+      <Dialog open={!!selectedChunk} onOpenChange={() => setSelectedChunk(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold">
+              Source Material Chunk #{selectedChunk?.id}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="p-4 bg-muted/30 border rounded-lg max-h-[60vh] overflow-y-auto font-mono text-xs leading-relaxed whitespace-pre-wrap text-foreground">
+            {selectedChunk?.text}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

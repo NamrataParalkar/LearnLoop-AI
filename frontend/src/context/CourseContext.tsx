@@ -1,4 +1,5 @@
 "use client";
+
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { getApiUrl } from "@/lib/config";
 import { useUser } from "./UserContext";
@@ -70,6 +71,9 @@ export interface CourseItem {
   };
 }
 
+// Backward compatibility alias
+export type Course = CourseItem;
+
 export interface MyLearningItem {
   enrollment_id: number;
   status: string;
@@ -97,6 +101,12 @@ export interface MyLearningItem {
 }
 
 interface CourseContextType {
+  // Legacy / convenience properties
+  courseId: number;
+  setCourseId: (id: number) => void;
+  activeCourse: CourseItem | null;
+
+  // Rich course ecosystem properties
   courses: CourseItem[];
   myLearning: MyLearningItem[];
   selectedCourseId: string;
@@ -114,6 +124,9 @@ interface CourseContextType {
 }
 
 const CourseContext = createContext<CourseContextType>({
+  courseId: 1,
+  setCourseId: () => {},
+  activeCourse: null,
   courses: [],
   myLearning: [],
   selectedCourseId: "1",
@@ -199,6 +212,10 @@ export function CourseProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem("learnloop_active_course_id", id);
       window.dispatchEvent(new CustomEvent("learnloop_course_changed", { detail: id }));
     }
+  };
+
+  const setCourseId = (id: number) => {
+    setSelectedCourseId(id.toString());
   };
 
   const createCourse = async (payload: Partial<CourseItem>) => {
@@ -312,10 +329,14 @@ export function CourseProvider({ children }: { children: React.ReactNode }) {
   };
 
   const selectedCourse = courses.find(c => String(c.id) === selectedCourseId) || courses[0] || null;
+  const courseId = parseInt(selectedCourseId, 10) || 1;
 
   return (
     <CourseContext.Provider
       value={{
+        courseId,
+        setCourseId,
+        activeCourse: selectedCourse,
         courses,
         myLearning,
         selectedCourseId,
