@@ -206,6 +206,28 @@ export default function GeminiNotebookTutor() {
     scrollToBottom();
   }, [messages, isTyping]);
 
+  // Deep integration: Pre-fill concept, course, style, and prompt from Learning Path navigation
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const cid = params.get("course_id");
+    if (cid) {
+      const pCid = parseInt(cid);
+      if (!isNaN(pCid)) setCourseId(pCid);
+    }
+    const styleParam = params.get("style");
+    if (styleParam) {
+      setStyle(styleParam);
+    }
+    const promptParam = params.get("prompt");
+    const conceptParam = params.get("concept");
+    if (promptParam) {
+      setInputValue(promptParam);
+    } else if (conceptParam) {
+      setInputValue(`Explain ${conceptParam} with source citations from the course material.`);
+    }
+  }, []);
+
   // Load sources & sessions from backend + localStorage sync so they NEVER vanish on reload
   const fetchSources = async () => {
     // 1. Instantly restore from localStorage first if available

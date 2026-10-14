@@ -51,9 +51,10 @@ inspect*.py
 temp2_output.html
 temp_output.html
 
-# Generated media caches
+# Generated media caches & local databases
 data/media/*/slides/
 data/media/*/audio.wav
+data/pgdata*/
 
 # OS files
 .DS_Store

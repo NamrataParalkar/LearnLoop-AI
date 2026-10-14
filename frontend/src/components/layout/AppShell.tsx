@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { useUser, DEMO_USERS } from "@/context/UserContext"
+import { useCourse } from "@/context/CourseContext"
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -32,7 +33,7 @@ const navigation = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const { setTheme } = useTheme()
-  const [course, setCourse] = useState("1")
+  const { courseId, setCourseId, courses } = useCourse()
   const { userId, setUserId, currentUser } = useUser()
 
   const SidebarContent = () => (
@@ -88,13 +89,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Top bar */}
         <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background/95 px-6 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <div className="flex flex-1 items-center gap-4">
-            <Select value={course} onValueChange={(v: string | null) => v && setCourse(v)}>
-              <SelectTrigger className="w-[200px]">
+            <Select value={courseId.toString()} onValueChange={(v: string | null) => v && setCourseId(parseInt(v))}>
+              <SelectTrigger className="w-[260px] truncate">
                 <SelectValue placeholder="Select Course" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="1">Intro to Algorithms</SelectItem>
-                <SelectItem value="2">Data Structures</SelectItem>
+                {courses.length > 0 ? (
+                  courses.map((c) => (
+                    <SelectItem key={c.id} value={c.id.toString()}>
+                      <span className="truncate">{c.title}</span>
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="1" disabled>No courses available</SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>

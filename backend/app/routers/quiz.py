@@ -14,6 +14,7 @@ router = APIRouter(prefix="/quiz", tags=["Quiz"])
 
 class GenerateQuizReq(BaseModel):
     course_id: int
+    user_id: Optional[int] = 1
     scope: Optional[Dict[str, Any]] = {}
     difficulty: str = "medium"
     num_questions: int = 10
@@ -46,7 +47,7 @@ def api_generate_quiz(req: GenerateQuizReq, db: Session = Depends(get_db)):
             difficulty=req.difficulty,
             num_questions=req.num_questions,
             q_types=req.types or ["mcq"],
-            user_id=1, # Demo user
+            user_id=req.user_id or 1,
             mode=req.mode,
             time_limit_sec=req.time_limit_sec
         )

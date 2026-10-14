@@ -1,3 +1,7 @@
+import os
+os.environ["USE_TF"] = "0"
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base
@@ -12,12 +16,15 @@ logger = logging.getLogger(__name__)
 try:
     with engine.connect() as conn:
         from sqlalchemy import text
-        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-        conn.commit()
+        try:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+            conn.commit()
+        except Exception as ve:
+            logger.info(f"pgvector extension not installed: {ve}")
     Base.metadata.create_all(bind=engine)
-    logger.info("Database tables and pgvector extension verified successfully.")
+    logger.info("Database tables verified successfully.")
 except Exception as e:
-    logger.warning(f"Could not connect to PostgreSQL on startup: {e}. Running in standalone mock/cache mode.")
+    logger.warning(f"Could not connect to PostgreSQL on startup: {e}.")
 
 app = FastAPI(title="LearnLoop API")
 

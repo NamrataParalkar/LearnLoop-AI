@@ -1,13 +1,20 @@
 import os
 import subprocess
 import logging
-from faster_whisper import WhisperModel
+try:
+    from faster_whisper import WhisperModel
+except ImportError:
+    WhisperModel = None
+
 from ingestion.schemas import RawUnit
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 def parse_video(source_id: int, file_path: str) -> list[RawUnit]:
+    if WhisperModel is None:
+        logger.warning("faster_whisper is not installed. Video parsing is disabled.")
+        return []
     units = []
     
     media_dir = os.path.join(settings.media_dir, str(source_id))
