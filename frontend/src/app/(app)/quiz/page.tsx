@@ -16,14 +16,23 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { getApiUrl } from "@/lib/config";
+import { useUser } from "@/context/UserContext";
 
 export default function PracticeQuizPage() {
+  const { userId } = useUser();
   // Navigation / View State
   // "setup" | "generating" | "runner" | "results"
   const [view, setView] = useState<"setup" | "generating" | "runner" | "results">(() => typeof window !== "undefined" && window.location.search.includes("view=results") ? "results" : "setup");
 
   // Setup Form State
-  const [courseId, setCourseId] = useState<number>(1);
+  const [courseId, setCourseId] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search);
+      const c = p.get("course_id");
+      if (c) return parseInt(c);
+    }
+    return 1;
+  });
   const [knowledgeTree, setKnowledgeTree] = useState<any[]>([]);
   const [selectedConcepts, setSelectedConcepts] = useState<number[]>([]);
   const [difficulty, setDifficulty] = useState<string>("mixed");
@@ -157,13 +166,23 @@ export default function PracticeQuizPage() {
       .then(data => {
         if (data && data.topics) {
           setKnowledgeTree(data.topics);
-          // Default select all concepts
           const allCids: number[] = [];
           data.topics.forEach((t: any) => {
             (t.subtopics || []).forEach((st: any) => {
               (st.concepts || []).forEach((c: any) => allCids.push(c.id));
             });
           });
+
+          // Check if a specific concept was passed via deep-link
+          if (typeof window !== "undefined") {
+            const params = new URLSearchParams(window.location.search);
+            const targetCid = params.get("concept_id") ? parseInt(params.get("concept_id")!) : null;
+            if (targetCid && allCids.includes(targetCid)) {
+              setSelectedConcepts([targetCid]);
+              setNumQuestions(5); // Focused concept practice default
+              return;
+            }
+          }
           setSelectedConcepts(allCids);
         }
       })
@@ -205,6 +224,7 @@ export default function PracticeQuizPage() {
     try {
       const payload = {
         course_id: courseId,
+        user_id: parseInt(userId || "1"),
         scope: { concept_ids: selectedConcepts },
         difficulty: difficulty,
         num_questions: numQuestions,

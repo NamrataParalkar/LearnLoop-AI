@@ -7,12 +7,19 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-client = genai.Client(api_key=settings.gemini_api_key)
+client = None
+if settings.gemini_api_key and settings.gemini_api_key.strip():
+    try:
+        client = genai.Client(api_key=settings.gemini_api_key.strip())
+    except Exception as e:
+        logger.warning(f"Could not initialize Gemini Client: {e}")
 
 FALLBACK_MODELS = ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.8-flash"]
 
 def generate_structured(prompt: str, schema: dict, model_name: str = None) -> dict:
     """Generate structured JSON output from Gemini with retry logic and fallback models."""
+    if not client:
+        raise RuntimeError("Gemini API key is not configured or client failed to initialize.")
     candidate_models = [model_name] if model_name else [settings.tutor_model] + [m for m in FALLBACK_MODELS if m != settings.tutor_model]
     
     config = types.GenerateContentConfig(
@@ -39,6 +46,8 @@ def generate_structured(prompt: str, schema: dict, model_name: str = None) -> di
 
 def generate_text(prompt: str, model_name: str = None) -> str:
     """Generate raw text from Gemini with retry logic and fallback models."""
+    if not client:
+        raise RuntimeError("Gemini API key is not configured or client failed to initialize.")
     candidate_models = [model_name] if model_name else [settings.tutor_model] + [m for m in FALLBACK_MODELS if m != settings.tutor_model]
         
     last_err = None
@@ -59,6 +68,8 @@ def generate_text(prompt: str, model_name: str = None) -> str:
 
 def generate_text_with_image(prompt: str, image_path: str, model_name: str = None) -> str:
     """Generate text from Gemini given an image."""
+    if not client:
+        raise RuntimeError("Gemini API key is not configured or client failed to initialize.")
     if not model_name:
         model_name = settings.tutor_model
         

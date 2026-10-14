@@ -18,6 +18,13 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 def process_source_background(source_id: int):
     run_ingestion(source_id)
 
+@router.get("/courses")
+def get_courses(db: Session = Depends(get_db)):
+    if not db:
+        return []
+    courses = db.query(models.Course).order_by(models.Course.id).all()
+    return [{"id": c.id, "title": c.title, "description": c.description} for c in courses]
+
 @router.post("/courses/{course_id}/upload")
 async def upload_source(course_id: int, background_tasks: BackgroundTasks, file: UploadFile = File(...), db: Session = Depends(get_db)):
     ext = file.filename.split('.')[-1].lower()

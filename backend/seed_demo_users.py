@@ -77,6 +77,14 @@ concepts = db.query(Concept).all()
 concept_map = {c.name: c for c in concepts}
 
 dummy_stems = {
+    "Leader-based BFT consensus": [
+        ("In leader-based BFT consensus protocols, the primary node proposes blocks while backup replicas vote in communication rounds.", "True", "true_false", "easy"),
+        ("What is the primary vulnerability of naive leader-based BFT consensus architectures?", "B) Leader network bandwidth saturation and Denial of Service", "mcq", "medium", ["A) Inability to tolerate crash faults", "B) Leader network bandwidth saturation and Denial of Service", "C) Requiring 100% honest participants", "D) Unverifiable cryptographic signatures"])
+    ],
+    "PBFT": [
+        ("Practical Byzantine Fault Tolerance (PBFT) tolerates up to f Byzantine faulty nodes in a system of at least 3f + 1 nodes.", "True", "true_false", "easy"),
+        ("What is the message complexity of PBFT during the commit phase in a network of N replicas?", "C) O(N^2)", "mcq", "medium", ["A) O(1)", "B) O(N)", "C) O(N^2)", "D) O(N^3)"])
+    ],
     "HotStuff-style BFT": [
         ("HotStuff achieves linear view change communication complexity through a three-phase commit rule.", "True", "true_false", "medium"),
         ("What is the primary architectural improvement of HotStuff over classical PBFT protocols?", "A) Linear communication complexity during leader rotation", "mcq", "hard", ["A) Linear communication complexity during leader rotation", "B) Elimination of cryptographic signatures", "C) Decentralized mempool dissemination", "D) Unbounded latency tolerance"])
@@ -96,6 +104,18 @@ dummy_stems = {
     "PoW and PoS": [
         ("Proof of Stake replaces computation-heavy energy mining with financial collateral staked by validators.", "True", "true_false", "easy"),
         ("What is the primary advantage of Proof-of-Stake over Proof-of-Work?", "A) Dramatically reduced electrical energy consumption and higher finality speed", "mcq", "medium", ["A) Dramatically reduced electrical energy consumption and higher finality speed", "B) Elimination of all Sybil attacks without incentives", "C) Infinite unbounded block sizes", "D) Guaranteed zero gas fees"])
+    ],
+    "Shared Mempool": [
+        ("A shared mempool decouples transaction dissemination from consensus ordering, allowing replicas to broadcast transaction batches independently.", "True", "true_false", "medium"),
+        ("How does a shared mempool architecture prevent the leader from becoming an ingress throughput bottleneck?", "A) Replicas stream transaction batches concurrently; the leader orders only compact batch IDs", "mcq", "hard", ["A) Replicas stream transaction batches concurrently; the leader orders only compact batch IDs", "B) The leader compresses all transactions into zero-knowledge proofs", "C) Transactions are dropped when the leader buffer fills", "D) Replicas bypass consensus and execute transactions optimistically"])
+    ],
+    "PAB transaction availability": [
+        ("Provably Available Broadcast (PAB) guarantees that transaction payloads are stored across a quorum of replicas before the leader proposes ordering.", "True", "true_false", "medium"),
+        ("What critical failure mode does Provably Available Broadcast (PAB) prevent in decoupled consensus systems?", "B) Data withholding attacks by malicious leaders", "mcq", "hard", ["A) Cryptographic key leakage", "B) Data withholding attacks by malicious leaders", "C) Network partition recovery failure", "D) Clock skew synchronization errors"])
+    ],
+    "Stratus protocol": [
+        ("In the Stratus protocol, replicas achieve high throughput by streaming transaction batches in parallel with consensus ordering rounds.", "True", "true_false", "easy"),
+        ("Which entity is solely responsible for ordering transaction batch IDs in Stratus?", "B) The designated leader orders compact IDs only", "mcq", "medium", ["A) All validator nodes via broadcast", "B) The designated leader orders compact IDs only", "C) Off-chain relayer nodes", "D) Smart contract execution engines"])
     ]
 }
 
